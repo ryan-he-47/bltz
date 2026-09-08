@@ -4,10 +4,11 @@
 
 ## 项目一句话
 
-ByteField(暂定名,待用户拍板):词表 free 的字节级语言模型——Set Transformer 把变长
-字节 patch 聚成 latent,标准 transformer 骨干做 patch 级自回归,条件神经场风格的
+ByteField(名称已由用户立场文件采用):词表 free 的字节级语言模型——Set Transformer
+把变长字节 patch 聚成 latent,标准 transformer 骨干做 patch 级自回归,条件神经场风格的
 查询解码头 `(h, Δ) → byte` 做多未来字节预测(MTP),推理时以解码器自身 softmax 熵
-决定变长停止,实现输入侧受控分割 / 输出侧模型自定界的对称架构。
+决定变长停止。定位:学院派 LLM 与语言表征维新派的和事佬——token LM 范式 +
+字节级可学习 I/O(详见 `docs/blt_research/ByteField用户立场归档.md`)。
 
 ## 硬性规则(violations are blocking)
 
@@ -52,4 +53,5 @@ ByteField(暂定名,待用户拍板):词表 free 的字节级语言模型——S
 - `reference_projects/MoB_Head/` — 问题定义(固定词表的不便与昂贵)与工程约定来源。
 - `reference_projects/2412.09871v1.txt` — BLT 原文文本版(PDF 提取)。
 - `reference_projects/2605.08044v1.txt` — Fast BLT(BLT-D/S/DV)文本版。
+- `docs/blt_research/ByteField用户立场归档.md` — 用户立场(定位/生态位/设计哲学)。
 - 外部文献调研报告(2026-09-08):见 `docs/03-literature.md`。
