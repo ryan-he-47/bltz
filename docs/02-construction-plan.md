@@ -34,7 +34,10 @@ scripts/           diag_* / viz_* / 标定脚本
 tests/             脚本式测试(无 pytest)
 ```
 - 数据:FineWeb-Edu `sample-10BT`(HF 不 gated,ODC-By,~9.67M 文档 / ~9.95B GPT-2
-  tokens ≈ ~44B 字节)streaming 下载 → 分割 → 分 shard 缓存到 `data/`(gitignored)。
+  tokens ≈ ~44B 字节)下载 → 分割 → 分 shard 缓存到 `data/`(gitignored)。
+  **下载布局已验证(2026-09-08,香港网络)**:14 个 parquet 分片
+  `sample/10BT/000_00000.parquet … 013_00000.parquet`,分片 0 实测 2.15 GB,
+  全量约 30 GB;HF API 与 CDN 直连可达,无需镜像。
   划分 train/val(dev 用官方 val 或自留 0.1%)。
 - 分割器测试(`tests/test_segment.py`):拼接 roundtrip == 原文;UTF-8 边界安全
   (多字节字符不切断);长度分布统计(avg / p50 / p95 / max);CJK / emoji / 代码 /
