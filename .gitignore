@@ -1,0 +1,11 @@
+reference_projects/
+.codegraph/
+.omo/
+data/
+checkpoints/
+runs/
+viz/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
