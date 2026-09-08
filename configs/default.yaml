@@ -1,0 +1,56 @@
+# ByteField authoritative config (twin-scale targets from docs/01-design.md §12)
+data:
+  dataset: fineweb-edu-sample-10BT
+  cache_dir: data/fineweb10b
+  n_patches: 512          # S patches per sequence
+  val_fraction: 0.001
+
+segment:
+  l_max: 16
+  p_split: 0.1
+  p_merge: 0.1
+
+model:
+  d_byte: 384
+  d_pos: 64
+  d_enc: 512
+  enc_layers: 2
+  enc_heads: 8
+  inducing: 16
+  d_model: 768
+  bb_layers: 12
+  bb_heads: 12
+  ffn_mult: 4
+  head_delta_dim: 64
+  head_hidden: 1536
+  head_depth: 4
+  k_max: 48               # = n_patches_ahead * l_max
+
+loss:
+  n_patches_ahead: 3      # n: cover 3 future patches (D4)
+  lam: 0.5                # patch-to-patch geometric decay (D4)
+  query_chunk: 200000
+
+train:
+  steps: 20000
+  batch: 32
+  lr: 4.0e-4
+  warmup: 1000
+  schedule: wsd
+  decay_frac: 0.4
+  final_frac: 0.1
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  wd: 0.1
+  clip: 1.0
+  spike_skip: 10.0
+  bf16: true
+  seed: 1234
+  ckpt_dir: checkpoints/twin
+  log_every: 50
+  val_every: 1000
+
+infer:
+  m_max: 16
+  theta_stop: 1.5
+  temperature: 0.0

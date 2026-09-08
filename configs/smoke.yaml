@@ -1,0 +1,56 @@
+# Tiny smoke config: everything small, fast on the 8GB card
+data:
+  dataset: fineweb-edu-sample-10BT
+  cache_dir: data/smoke
+  n_patches: 64
+  val_fraction: 0.0
+
+segment:
+  l_max: 16
+  p_split: 0.1
+  p_merge: 0.1
+
+model:
+  d_byte: 64
+  d_pos: 16
+  d_enc: 128
+  enc_layers: 1
+  enc_heads: 4
+  inducing: 4
+  d_model: 256
+  bb_layers: 4
+  bb_heads: 4
+  ffn_mult: 4
+  head_delta_dim: 32
+  head_hidden: 512
+  head_depth: 3
+  k_max: 48
+
+loss:
+  n_patches_ahead: 3
+  lam: 0.5
+  query_chunk: 100000
+
+train:
+  steps: 300
+  batch: 8
+  lr: 1.0e-3
+  warmup: 50
+  schedule: wsd
+  decay_frac: 0.4
+  final_frac: 0.1
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  wd: 0.1
+  clip: 1.0
+  spike_skip: 10.0
+  bf16: true
+  seed: 1234
+  ckpt_dir: checkpoints/smoke
+  log_every: 25
+  val_every: 300
+
+infer:
+  m_max: 16
+  theta_stop: 1.5
+  temperature: 0.0
