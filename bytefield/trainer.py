@@ -75,7 +75,7 @@ def train(
     # precision: bf16 (sm89+, no scaler) | fp16 + GradScaler (V100 path, MoB
     # house rule — sm70 has no bf16). train.bf16=false selects fp16.
     use_bf16 = bool(tcfg.bf16)
-    scaler = torch.cuda.amp.GradScaler(enabled=not use_bf16)
+    scaler = torch.amp.GradScaler("cuda", enabled=not use_bf16)
 
     history: list[dict[str, Any]] = []
     med_hist: deque[float] = deque(maxlen=1000)
