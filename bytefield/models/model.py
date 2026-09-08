@@ -29,6 +29,7 @@ class ByteFieldLM(nn.Module):
             layers=m.bb_layers,
             ffn_mult=m.ffn_mult,
             max_len=cfg.data.n_patches + 8,
+            grad_ckpt=bool(m.get("grad_ckpt", False)),
         )
         self.head = ConditionalByteHead(
             d_in=m.d_model,

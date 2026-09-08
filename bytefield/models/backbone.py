@@ -23,13 +23,18 @@ class RMSNorm(nn.Module):
 
 
 def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
-    """Interleaved RoPE. x (B, nh, T, hd); cos/sin (T, hd/2) fp32."""
-    x1, x2 = x[..., ::2], x[..., 1::2]
-    cos = cos[None, None]
-    sin = sin[None, None]
-    out1 = x1 * cos - x2 * sin
-    out2 = x1 * sin + x2 * cos
-    return torch.stack([out1, out2], dim=-1).flatten(-2).type_as(x)
+    """Half-split (GPT-NeoX style) RoPE. x (B, nh, T, hd); cos/sin (T, hd/2).
+
+    NOTE: the interleaved-pairs formulation (stack([o1, o2], -1)) was measured
+    at 104 ms/call on this machine — the stride-2 interleaved cat is severely
+    uncoalesced (67.7% of the whole backbone's CUDA time, see
+    scripts/prof_backbone.py output in docs/06). Contiguous-half cat is the
+    same rotation, coalesced. Computed in x.dtype to avoid fp32 temporaries."""
+    hd2 = x.shape[-1] // 2
+    x1, x2 = x[..., :hd2], x[..., hd2:]
+    cos = cos[None, None].to(x.dtype)
+    sin = sin[None, None].to(x.dtype)
+    return torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=-1)
 
 
 class Block(nn.Module):
@@ -70,10 +75,12 @@ class Backbone(nn.Module):
         ffn_mult: int = 4,
         max_len: int = 520,
         rope_base: float = 500000.0,
+        grad_ckpt: bool = False,
     ):
         super().__init__()
         self.rope_base = rope_base
         self.hd = d_model // nhead
+        self.grad_ckpt = grad_ckpt
         self.blocks = nn.ModuleList(
             [Block(d_model, nhead, ffn_mult) for _ in range(layers)]
         )
@@ -99,5 +106,10 @@ class Backbone(nn.Module):
         cos = self.rope_cos.to(x.device)
         sin = self.rope_sin.to(x.device)
         for blk in self.blocks:
-            x = blk(x, cos, sin)
+            if self.grad_ckpt and self.training:
+                x = torch.utils.checkpoint.checkpoint(
+                    blk, x, cos, sin, use_reentrant=False
+                )
+            else:
+                x = blk(x, cos, sin)
         return self.final_norm(x)

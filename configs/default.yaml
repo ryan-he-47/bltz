@@ -21,6 +21,7 @@ model:
   bb_layers: 12
   bb_heads: 12
   ffn_mult: 4
+  grad_ckpt: false        # gradient checkpointing escape hatch (batch 16 以上需要)
   head_delta_dim: 64
   head_hidden: 1536
   head_depth: 4
@@ -33,7 +34,7 @@ loss:
 
 train:
   steps: 20000
-  batch: 32
+  batch: 8                # 8GB 本机标定(2026-09-08, docs/06): 32 OOM, 16 分配器抖动, 8 稳妥
   lr: 4.0e-4
   warmup: 1000
   schedule: wsd
