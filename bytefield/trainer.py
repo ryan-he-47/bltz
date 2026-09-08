@@ -7,6 +7,7 @@ spike guard = skip step when grad norm > max(10x running median, 2000)
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from collections import deque
@@ -63,6 +64,11 @@ def train(
     os.makedirs(tcfg.ckpt_dir, exist_ok=True)
     log_path = os.path.join(tcfg.ckpt_dir, "train.log")
 
+    # precision: bf16 (sm89+, no scaler) | fp16 + GradScaler (V100 path, MoB
+    # house rule — sm70 has no bf16). train.bf16=false selects fp16.
+    use_bf16 = bool(tcfg.bf16)
+    scaler = torch.cuda.amp.GradScaler(enabled=not use_bf16)
+
     history: list[dict[str, Any]] = []
     med_hist: deque[float] = deque(maxlen=1000)
     best = float("inf")
@@ -81,21 +87,33 @@ def train(
         batch = {k: v.to(device) for k, v in batch_fn().items()}
         for g in opt.param_groups:
             g["lr"] = sched(step)
-        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=tcfg.bf16):
+        with torch.autocast(
+            "cuda", dtype=torch.bfloat16 if use_bf16 else torch.float16
+        ):
             loss = mtp_loss(model, batch, cfg)
         opt.zero_grad(set_to_none=True)
-        loss.backward()
+        if use_bf16:
+            loss.backward()
+        else:
+            scaler.scale(loss).backward()
+            scaler.unscale_(opt)  # guard/clip must see UNSCALED grad norms
         gn = grad_norm(model)
 
         median = sorted(med_hist)[len(med_hist) // 2] if len(med_hist) >= 50 else None
         thresh = max(tcfg.spike_skip * median, 2000.0) if median is not None else float("inf")
-        if gn > thresh:
+        if not math.isfinite(gn) or gn > thresh:
             skips += 1
             log({"step": step, "event": "spike_skip", "gn": round(gn, 1), "thresh": round(thresh, 1)})
+            if not use_bf16:
+                scaler.update()  # keep the scale fresh on skipped steps
             continue
         med_hist.append(gn)
         torch.nn.utils.clip_grad_norm_(model.parameters(), tcfg.clip)
-        opt.step()
+        if use_bf16:
+            opt.step()
+        else:
+            scaler.step(opt)
+            scaler.update()
 
         lval = float(loss.item())
         last_loss = lval

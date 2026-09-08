@@ -46,8 +46,10 @@ escape hatch:`model.grad_ckpt: true` 已接线(骨干逐块 checkpoint),
 | **D. twin 上集群 V100(推荐)** | ~1 天以内(估) | 32GB 可开 batch 32;fp16+GradScaler(MoB 既有配方);本机解放做诊断 |
 
 我的建议:**D**——twin 双臂(ByteField + token 基线)都上 burgundy,
-本机只留诊断与小规模迭代;V100 无 bf16 需切 fp16,trainer 加
-`--set train.bf16=false` 分支即可(改动小)。
+本机只留诊断与小规模迭代;V100 无 bf16 需切 fp16。**fp16+GradScaler 分支
+已实现并本机验证**(2026-09-08:trainer `train.bf16=false` 即走 fp16+scaler,
+过拟合冒烟 5.55→0.042 收敛,spike guard 正常;上集群时只需
+`--set train.bf16=false`)。
 
 ## 5. 顺带修复与新增(本 commit)
 
