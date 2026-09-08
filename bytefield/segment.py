@@ -117,3 +117,38 @@ class Segmenter:
             else:
                 out.append(u)
         return out
+
+
+def augment_unit_bytes(
+    units: list[bytes],
+    l_max: int,
+    p_split: float,
+    p_merge: float,
+    rng: random.Random,
+) -> list[bytes]:
+    """Same augmentation as Segmenter._augment but on cached byte units
+    (read-time path of the disk cache). Byte-concat merges are always
+    UTF-8 safe; splits decode the (<= l_max-byte) unit to find a char boundary."""
+    merged: list[bytes] = []
+    i = 0
+    while i < len(units):
+        if (
+            i + 1 < len(units)
+            and rng.random() < p_merge
+            and len(units[i]) + len(units[i + 1]) <= l_max
+        ):
+            merged.append(units[i] + units[i + 1])
+            i += 2
+        else:
+            merged.append(units[i])
+            i += 1
+    out: list[bytes] = []
+    for ub in merged:
+        s = ub.decode("utf-8")
+        if rng.random() < p_split and len(s) >= 2:
+            cut = rng.randrange(1, len(s))
+            out.append(s[:cut].encode("utf-8"))
+            out.append(s[cut:].encode("utf-8"))
+        else:
+            out.append(ub)
+    return out

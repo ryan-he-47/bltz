@@ -36,7 +36,8 @@ ByteField(名称已由用户立场文件采用):词表 free 的字节级语言�
 - 改训练行为必须跑诊断脚本验证,不许"应该能行"。
 - **条件解码头的查询永远是相对偏移 Δ,绝不喂绝对位置**(v6 静态扇作弊教训:
   绝对位置会被解码器忽视,error 随 horizon 平坦 = 作弊签名)。
-- 逐 Δ 诊断是硬性验收项:accuracy/entropy 必须随 Δ 单调劣化。
+- 逐 Δ 诊断是硬性验收项(v2 分层判据,见 `docs/05-diag-d1-v2.md`):跨未来
+  patch 的预测力(acc)必须衰减;逐 Δ 熵极差≈0 = 头忽视 Δ = 作弊。
 - 训练守卫:spike_skip = max(10×running median, 2000);Adam β2=0.95;不许擅自改。
 - LR 调度 house rule:可续训/探底 run 默认 **WSD**;weight-only 续训重启的 peak
   不得超过上一 run 的结束 LR。

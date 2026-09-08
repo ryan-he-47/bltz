@@ -26,6 +26,43 @@ from .segment import Segmenter
 PAD_ID = 256
 
 
+def tensorize_units(flat_bytes: torch.Tensor, lens: torch.Tensor, l_max: int) -> dict[str, torch.Tensor]:
+    """One sequence from a unit stream -> batch dict entry (no batch dim).
+
+    flat_bytes (F,) uint8-compatible, lens (S,) patch lengths. Vectorized:
+    scatter each flat byte to (patch_idx, pos_in_patch) in a padded (S, l_max)
+    canvas."""
+    S = int(lens.numel())
+    F = int(flat_bytes.numel())
+    dev = flat_bytes.device
+    ends = lens.cumsum(0)
+    patch_pos = torch.repeat_interleave(torch.arange(S, device=dev), lens)
+    pos_in = torch.arange(F, device=dev) - (ends - lens)[patch_pos]
+
+    byte_ids = torch.full((S, l_max), PAD_ID, dtype=torch.long, device=dev)
+    byte_ids[patch_pos, pos_in] = flat_bytes.long()
+    pad_mask = torch.ones(S, l_max, dtype=torch.bool, device=dev)
+    pad_mask[patch_pos, pos_in] = False
+
+    flat = torch.zeros(S * l_max, dtype=torch.long, device=dev)
+    flat[:F] = flat_bytes.long()
+    pp = torch.zeros(S * l_max, dtype=torch.long, device=dev)
+    pp[:F] = patch_pos
+    return {
+        "byte_ids": byte_ids,
+        "pad_mask": pad_mask,
+        "flat": flat,
+        "flat_len": torch.tensor(F, dtype=torch.long),
+        "ends": ends,
+        "patch_pos": pp,
+    }
+
+
+def collate_sequences(seqs: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
+    """Stack per-sequence dicts into a batch dict (uniform shapes by construction)."""
+    return {k: torch.stack([s[k] for s in seqs]) for k in seqs[0]}
+
+
 def build_batch(
     texts: list[str],
     segmenter: Segmenter,
