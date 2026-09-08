@@ -1,0 +1,43 @@
+# Stage-2 twin control: GPT-2 token baseline (backbone matched to ByteField twin)
+#
+# Matching math (docs/02 §3, docs/06):
+#   ByteField twin : batch 8 x 512 patches ≈ 8 x 512 x ~5.2 B ≈ 21.3 KB bytes/step
+#   this baseline  : batch 8 x 640 tokens  = 5120 tok ≈ 22.5 KB bytes/step (GPT-2 ~4.4 B/tok)
+#   context match  : 640 tok ≈ 2816 B ≈ 512 patches ≈ 2.7 KB
+# FLOPs/byte accounting for the report (BLT §4.5 style): baseline carries the
+# 50257x768 embedding + lm_head (2x768x50257 FLOPs/token ≈ +34% per token);
+# ByteField carries encoder + head query FLOPs. Both sides reported, no hiding.
+
+data:
+  cache_dir: data/tokengpt2
+  seq_len: 640              # ≈ 2816 bytes, context-matched to ByteField S=512
+
+model:
+  d_model: 768
+  bb_layers: 12
+  bb_heads: 12
+  ffn_mult: 4
+  vocab: 50257
+
+train:
+  steps: 20000
+  batch: 8                  # bytes/step match with the ByteField twin arm
+  lr: 4.0e-4
+  warmup: 1000
+  schedule: wsd
+  decay_frac: 0.4
+  final_frac: 0.1
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  wd: 0.1
+  clip: 1.0
+  spike_skip: 10.0
+  bf16: true                # 集群 V100 上设 false -> fp16+GradScaler
+  seed: 1234
+  ckpt_dir: checkpoints/baseline_twin
+  log_every: 50
+  val_every: 1000
+
+build:
+  workers: 8
+  max_docs_per_file: 0      # >0 仅供测试构建

@@ -1,6 +1,21 @@
 # AGENTS.md
 
-项目长期约定。新会话先读本文件 + `docs/01-design.md` + `docs/02-construction-plan.md`。
+项目长期约定。新会话先读本文件 + `docs/08-runbook-stage1.md`(起跑)或
+`docs/01-design.md`(设计)。
+
+## 当前状态(2026-09-09)
+
+- **阶段:设计与管线完成,Stage 1/2 就绪待发。** 明日(用户醒后)跑全量缓存 +
+  twin 双臂,待用户拍板:预算选项 A/B/C/D(docs/06 §4)、磁盘 ~80GB、缓存下载放行。
+- **入口文档**:`docs/01` 设计思想 / `docs/02` 施工计划 / `docs/07` 代码架构 /
+  `docs/08` 明日 runbook / `docs/09` 长期路线;冒烟与诊断报告在 `docs/04`、`docs/05`、`docs/06`。
+- commit 史:`706b5a3` 设计文档 → `03504a8` 立场回写+定名 → `b76aacb` 管线+冒烟 →
+  `611366a` 缓存层+D-1v2+token基线 → `954a642` 补漏测试 → `1f73c5d` RoPE修复+标定
+  → `c9d8edc` fp16 分支。
+- **警告:旧 smoke ckpt(checkpoints/smoke/)与新 RoPE 约定(半劈)不兼容**,
+  仅作历史 artifact(docs/07 §4.1)。
+- 测试 8 个,全绿:test_segment / test_model / test_cache / test_token_lm /
+  test_shard_train / test_cache_builder / test_baseline_pipeline / test_resume。
 
 ## 项目一句话
 

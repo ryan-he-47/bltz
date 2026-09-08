@@ -17,9 +17,15 @@ softmax 熵决定变长停止。
 
 | 文档 | 内容 |
 |---|---|
-| `docs/01-design.md` | 设计思想:决策记录、架构规格、训练目标、推理循环、诊断清单、风险登记册 |
+| `docs/01-design.md` | 设计思想:决策记录、定位、架构规格、训练目标、推理循环、诊断清单、风险登记册 |
 | `docs/02-construction-plan.md` | 施工计划:Stage 0-4、验收门、失败预案、资源清单 |
 | `docs/03-literature.md` | 外部文献与代码调研(2026-09-08,含全部 URL) |
+| `docs/04-stage0-1-smoke.md` | 管线冒烟报告(过拟合/真实短跑/θ_stop 机制) |
+| `docs/05-diag-d1-v2.md` | D-1 诊断判据修订(v2 分层)与首读 |
+| `docs/06-twin-calibration.md` | twin 本地标定(batch 8 / RoPE 修复 / gemm-bound / 预算选项) |
+| `docs/07-code-architecture.md` | 代码架构与运维手册(数据结构/命令/坑位/性能事实) |
+| `docs/08-runbook-stage1.md` | 明日 runbook:全量缓存 + twin 双臂(无损起跑指南) |
+| `docs/09-roadmap.md` | 长期路线图:Stage 3/4 规格、开放超参、论文定位备忘 |
 | `docs/blt_research/ByteField用户立场归档.md` | 用户立场:工作定位、学术生态位、设计哲学 |
 | `reference_projects/` | 参考:BLT / Fast BLT 论文文本版、simple_point_cloud(架构模板)、MoB_Head(问题定义) |
 

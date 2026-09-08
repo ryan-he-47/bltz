@@ -50,8 +50,16 @@ def train(
     batch_fn: Callable[[], dict[str, torch.Tensor]],
     cfg,
     device: str = "cuda",
+    loss_fn: Callable[[torch.nn.Module, dict[str, torch.Tensor], Any], torch.Tensor] | None = None,
 ) -> list[dict[str, Any]]:
-    """batch_fn() -> batch dict (CPU tensors). Returns the log history."""
+    """batch_fn() -> batch dict (CPU tensors). Returns the log history.
+
+    loss_fn(model, batch, cfg) -> scalar loss; defaults to mtp_loss (the
+    ByteField objective). The token baseline passes a wrapper around
+    next_token_loss so both arms share this exact loop (optimizer, schedule,
+    spike guard, precision paths)."""
+    if loss_fn is None:
+        loss_fn = mtp_loss
     tcfg = cfg.train
     opt = torch.optim.AdamW(
         model.parameters(),
@@ -76,6 +84,55 @@ def train(
     skips = 0
     t0 = time.time()
 
+    # ---- breakpoint resume (--set train.resume=<ckpt_full.pt>) ----
+    # Full state: model+optimizer+schedule-relevant counters+RNG. Data sampling
+    # order is NOT captured (ShardReader sampling is random with replacement —
+    # approximation, documented in docs/07).
+    start_step = 0
+    resume = str(tcfg.get("resume", "") or "")
+    if resume:
+        # load to CPU: RNG state must be a CPU ByteTensor for set_rng_state;
+        # model/optimizer states are placed on the model's device by load_state_dict.
+        state = torch.load(resume, map_location="cpu", weights_only=False)
+        model.load_state_dict(state["model"])
+        opt.load_state_dict(state["opt"])
+        start_step = int(state["step"]) + 1
+        med_hist = deque(state.get("med_hist", []), maxlen=1000)
+        best = float(state.get("best", "inf"))
+        skips = int(state.get("skips", 0))
+        torch.set_rng_state(state["rng_cpu"])
+        torch.cuda.set_rng_state(state["rng_cuda"])
+        if not use_bf16 and "scaler" in state:
+            scaler.load_state_dict(state["scaler"])
+        print(f"resumed from {resume} at step {start_step}", flush=True)
+    ckpt_every = int(tcfg.get("ckpt_every", 1000))
+    ckpt_keep = int(tcfg.get("ckpt_keep", 2))
+
+    def save_full(step: int) -> None:
+        # rotate: ckpt_full.pt -> ckpt_full.pt.1 (one previous full state kept,
+        # so a post-collapse checkpoint is not the only recovery point)
+        path = os.path.join(tcfg.ckpt_dir, "ckpt_full.pt")
+        if ckpt_keep > 1 and os.path.exists(path):
+            bak = path + ".1"
+            if os.path.exists(bak):
+                os.remove(bak)
+            os.replace(path, bak)
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "opt": opt.state_dict(),
+                "step": step,
+                "med_hist": list(med_hist),
+                "best": best,
+                "skips": skips,
+                "rng_cpu": torch.get_rng_state(),
+                "rng_cuda": torch.cuda.get_rng_state(),
+                "scaler": scaler.state_dict(),
+                "cfg": cfg.to_dict(),
+            },
+            path,
+        )
+
     def log(rec: dict[str, Any]) -> None:
         history.append(rec)
         line = json.dumps(rec, ensure_ascii=False)
@@ -83,14 +140,14 @@ def train(
             f.write(line + "\n")
         print(line, flush=True)
 
-    for step in range(tcfg.steps):
+    for step in range(start_step, tcfg.steps):
         batch = {k: v.to(device) for k, v in batch_fn().items()}
         for g in opt.param_groups:
             g["lr"] = sched(step)
         with torch.autocast(
             "cuda", dtype=torch.bfloat16 if use_bf16 else torch.float16
         ):
-            loss = mtp_loss(model, batch, cfg)
+            loss = loss_fn(model, batch, cfg)
         opt.zero_grad(set_to_none=True)
         if use_bf16:
             loss.backward()
@@ -132,7 +189,10 @@ def train(
                 "skips": skips,
                 "sec": round(time.time() - t0, 1),
             })
+        if ckpt_every and (step + 1) % ckpt_every == 0:
+            save_full(step)
 
+    save_full(tcfg.steps - 1)
     torch.save(
         {"model": model.state_dict(), "cfg": cfg.to_dict(), "step": tcfg.steps, "loss": last_loss},
         os.path.join(tcfg.ckpt_dir, "last.pt"),
