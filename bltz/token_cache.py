@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+from array import array
 from typing import Any
 
 import numpy as np
@@ -28,8 +29,11 @@ class TokenShardWriter:
     def __init__(self, out_dir: str):
         os.makedirs(out_dir, exist_ok=True)
         self.out_dir = out_dir
-        self._tokens: list[int] = []
-        self._flags: list[int] = []
+        # compact backing (same 2026-09-12 OOM lesson as ShardWriter, worse:
+        # token ids exceed 256 so they are NOT small-int cached -> a Python
+        # list costs ~28B/token, ~20GB for a 715M-token shard). array = 2B/1B.
+        self._tokens = array("H")  # uint16, ids <= vocab-1
+        self._flags = array("b")   # uint8
         self.n_docs = 0
 
     @property
@@ -40,19 +44,19 @@ class TokenShardWriter:
         """ids already include the trailing EOS separator."""
         if not ids:
             return
-        for i, t in enumerate(ids):
-            self._tokens.append(t)
-            self._flags.append(1 if i == 0 else 0)
+        self._tokens.extend(ids)
+        self._flags.append(1)
+        self._flags.extend([0] * (len(ids) - 1))
         self.n_docs += 1
 
     def close(self, vocab: int, tokenizer_name: str) -> dict[str, Any]:
         np.save(
             os.path.join(self.out_dir, "tokens.npy"),
-            np.asarray(self._tokens, dtype=np.uint16),
+            np.frombuffer(self._tokens, dtype=np.uint16),
         )
         np.save(
             os.path.join(self.out_dir, "doc_flag.npy"),
-            np.asarray(self._flags, dtype=np.uint8),
+            np.frombuffer(self._flags, dtype=np.uint8),
         )
         meta: dict[str, Any] = {
             "n_tokens": len(self._tokens),

@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import random
+from array import array
 from typing import Any
 
 import numpy as np
@@ -33,8 +34,12 @@ class ShardWriter:
         self.out_dir = out_dir
         self.l_max = l_max
         self._bytes = bytearray()
-        self._lens: list[int] = []
-        self._flags: list[int] = []
+        # compact backing stores (cluster OOM lesson 2026-09-12: a Python list
+        # of ints costs ~8B/entry in pointers -> 144M units/shard was
+        # ~2.3GB/worker, 8 workers pegged MaxRSS 45.6G vs the 48G limit and
+        # mp.Pool hung on the OOM-killed workers). array('b') = 1B/entry.
+        self._lens = array("b")
+        self._flags = array("b")
         self.n_docs = 0
 
     @property
@@ -53,10 +58,10 @@ class ShardWriter:
     def close(self, segmenter_cfg: dict[str, Any]) -> dict[str, Any]:
         np.save(
             os.path.join(self.out_dir, "bytes.npy"),
-            np.frombuffer(bytes(self._bytes), dtype=np.uint8),
+            np.frombuffer(self._bytes, dtype=np.uint8),  # zero-copy view
         )
-        np.save(os.path.join(self.out_dir, "unit_len.npy"), np.asarray(self._lens, dtype=np.uint8))
-        np.save(os.path.join(self.out_dir, "unit_flag.npy"), np.asarray(self._flags, dtype=np.uint8))
+        np.save(os.path.join(self.out_dir, "unit_len.npy"), np.frombuffer(self._lens, dtype=np.uint8))
+        np.save(os.path.join(self.out_dir, "unit_flag.npy"), np.frombuffer(self._flags, dtype=np.uint8))
         meta = {
             "n_units": len(self._lens),
             "n_bytes": len(self._bytes),
