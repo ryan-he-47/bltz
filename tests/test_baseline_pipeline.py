@@ -12,8 +12,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import torch
 
-from bytefield.models.token_lm import TokenLlama, next_token_loss
-from bytefield.token_cache import EOS_ID, TokenShardReader
+from bltz.models.token_lm import TokenLlama, next_token_loss
+from bltz.token_cache import EOS_ID, TokenShardReader
 from scripts.build_token_cache import _process_file
 
 TEXTS = [

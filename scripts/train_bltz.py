@@ -1,5 +1,5 @@
-"""Train the ByteField twin arm (Stage 1/2).
-Run: python -u scripts/train_bytefield.py [configs/default.yaml] [--set a.b=value]
+"""Train the bltz twin arm (Stage 1/2).
+Run: python -u scripts/train_bltz.py [configs/default.yaml] [--set a.b=value]
   resume: --set train.resume=checkpoints/twin/ckpt_full.pt"""
 from __future__ import annotations
 
@@ -11,10 +11,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
 
-from bytefield.config import parse_cli
-from bytefield.models import ByteFieldLM
-from bytefield.shards import ShardReader
-from bytefield.trainer import train
+from bltz.config import parse_cli
+from bltz.models import BltzLM
+from bltz.shards import ShardReader
+from bltz.trainer import train
 
 
 def main() -> None:
@@ -25,8 +25,8 @@ def main() -> None:
     print(f"byte cache: {n_seq} sequences at S={S}")
 
     torch.manual_seed(cfg.train.seed)
-    model = ByteFieldLM(cfg).cuda()
-    print(f"ByteFieldLM params: {sum(p.numel() for p in model.parameters())/1e6:.1f}M")
+    model = BltzLM(cfg).cuda()
+    print(f"BltzLM params: {sum(p.numel() for p in model.parameters())/1e6:.1f}M")
 
     rng = random.Random(cfg.train.seed)
 

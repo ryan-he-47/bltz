@@ -9,7 +9,7 @@
 char_lm/
   AGENTS.md            项目约定 + 当前状态快照(先读)
   README.md            入口
-  bytefield/           主包
+  bltz/           主包
     config.py          Cfg: YAML + --set a.b=value(浮点覆盖必须带小数点)
     segment.py         固定语义分割器 + augment_unit_bytes(读时增强)
     data.py            build_batch(内存路径) + tensorize_units/collate_sequences + 流式取数
@@ -22,10 +22,10 @@ char_lm/
       encoder.py       Set Transformer(byte emb ⊕ 局部 PE → ISAB → PMA → latent)
       backbone.py      Llama 式骨干(RMSNorm/RoPE 半劈/SwiGLU,SDPA is_causal,grad_ckpt 选项)
       head.py          ConditionalByteHead (h, Δ) → 256 logits,Δ 恒为相对偏移
-      model.py         ByteFieldLM 接线
+      model.py         BltzLM 接线
       token_lm.py      TokenLlama(GPT-2 词表 + 同一 Backbone + lm_head) + next_token_loss
   configs/
-    default.yaml       ByteField twin 权威配置(S=512, batch 8)
+    default.yaml       bltz twin 权威配置(S=512, batch 8)
     baseline.yaml      token 基线 twin 配置(T=640, batch 8,含匹配数学)
     smoke.yaml         微型冒烟配置
   scripts/

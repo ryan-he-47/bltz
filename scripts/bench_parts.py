@@ -12,10 +12,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
 
-from bytefield.config import parse_cli
-from bytefield.models import ByteFieldLM
-from bytefield.objectives import mtp_targets
-from bytefield.shards import ShardReader
+from bltz.config import parse_cli
+from bltz.models import BltzLM
+from bltz.objectives import mtp_targets
+from bltz.shards import ShardReader
 
 REPS = 5
 
@@ -40,7 +40,7 @@ def main() -> None:
     batch = {k: v.cuda() for k, v in batch.items()}
 
     torch.manual_seed(0)
-    model = ByteFieldLM(cfg).cuda()
+    model = BltzLM(cfg).cuda()
     print(f"params: {sum(p.numel() for p in model.parameters())/1e6:.1f}M, "
           f"batch={cfg.train.batch}, S={S}")
 
@@ -68,7 +68,7 @@ def main() -> None:
 
         def full_step():
             with torch.autocast("cuda", dtype=torch.bfloat16):
-                from bytefield.objectives import mtp_loss
+                from bltz.objectives import mtp_loss
                 loss = mtp_loss(model, batch, cfg)
             model.zero_grad(set_to_none=True)
             loss.backward()

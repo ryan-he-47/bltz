@@ -9,11 +9,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
 
-from bytefield.config import parse_cli
-from bytefield.data import build_batch
-from bytefield.models import ByteFieldLM
-from bytefield.segment import Segmenter
-from bytefield.trainer import train
+from bltz.config import parse_cli
+from bltz.data import build_batch
+from bltz.models import BltzLM
+from bltz.segment import Segmenter
+from bltz.trainer import train
 
 TEXT = (
     "The Byte Latent Transformer encodes bytes into dynamically sized patches, "
@@ -34,7 +34,7 @@ def main() -> None:
     batch = {k: v[:keep] for k, v in batch.items()}  # ONE fixed batch
     print(f"overfit batch: B={keep}, S={cfg.data.n_patches}, flat_len={batch['flat_len'][0].item()}")
 
-    model = ByteFieldLM(cfg).cuda()
+    model = BltzLM(cfg).cuda()
     history = train(model, lambda: batch, cfg)
 
     losses = [r["loss"] for r in history if "loss" in r]

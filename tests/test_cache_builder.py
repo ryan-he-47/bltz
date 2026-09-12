@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from bytefield.segment import Segmenter
-from bytefield.shards import ShardReader
+from bltz.segment import Segmenter
+from bltz.shards import ShardReader
 from scripts.build_cache import _process_file
 
 TEXTS = [

@@ -7,10 +7,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from bytefield.segment import Segmenter
+from bltz.segment import Segmenter
 
 SAMPLES = [
-    "Hello, world! This is ByteField.",
+    "Hello, world! This is bltz.",
     "The quick brown fox jumps over the lazy dog. 123 + 4.56 = 128.56",
     "don't can't it's we're they've I'd",
     "你好,世界。这是一段混合文本 with English words 混合在一起。",

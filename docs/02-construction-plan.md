@@ -19,9 +19,9 @@ Stage 4  1B 概念验证          集群 V100 (fp16)          ~5-10 天 [预算�
 ## 1. Stage 0 — 项目骨架 + 数据管线(本机)
 
 **产出物**:
-- 包结构(包名 `bytefield`,暂定待拍板):
+- 包结构(包名 `bltz`,暂定待拍板):
 ```
-bytefield/
+bltz/
   config.py        YAML + --set a.b=value 覆盖(浮点带小数点)
   segment.py       固定语义分割器(design §5.1)
   data.py          FineWeb-Edu streaming → 字节+边界掩码 → shard 缓存

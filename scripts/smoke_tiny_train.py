@@ -11,12 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
 
-from bytefield.config import parse_cli
-from bytefield.data import build_batch, stream_fineweb_texts
-from bytefield.infer import generate
-from bytefield.models import ByteFieldLM
-from bytefield.segment import Segmenter
-from bytefield.trainer import train
+from bltz.config import parse_cli
+from bltz.data import build_batch, stream_fineweb_texts
+from bltz.infer import generate
+from bltz.models import BltzLM
+from bltz.segment import Segmenter
+from bltz.trainer import train
 
 N_DOCS = 1500
 
@@ -35,7 +35,7 @@ def main() -> None:
     n_seq = batch["byte_ids"].shape[0]
     print(f"sequences: {n_seq} (S={cfg.data.n_patches} patches each)")
 
-    model = ByteFieldLM(cfg).cuda()
+    model = BltzLM(cfg).cuda()
     n_params = sum(p.numel() for p in model.parameters())
     print(f"model params: {n_params/1e6:.2f}M")
 

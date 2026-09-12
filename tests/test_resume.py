@@ -10,11 +10,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
 
-from bytefield.config import load
-from bytefield.data import build_batch
-from bytefield.models import ByteFieldLM
-from bytefield.segment import Segmenter
-from bytefield.trainer import train
+from bltz.config import load
+from bltz.data import build_batch
+from bltz.models import BltzLM
+from bltz.segment import Segmenter
+from bltz.trainer import train
 
 TEXT = (
     "The Byte Latent Transformer encodes bytes into dynamically sized patches, "
@@ -36,7 +36,7 @@ def main() -> None:
     shutil.rmtree(TMP, ignore_errors=True)
 
     torch.manual_seed(cfg.train.seed)
-    model = ByteFieldLM(cfg).cuda()
+    model = BltzLM(cfg).cuda()
     cfg.train.steps = 15
     cfg.train.ckpt_dir = str(TMP)
     cfg.train.log_every = 5
@@ -47,7 +47,7 @@ def main() -> None:
     last1 = losses1[-1]
 
     torch.manual_seed(999)  # different init: proves the state actually loads
-    model2 = ByteFieldLM(cfg).cuda()
+    model2 = BltzLM(cfg).cuda()
     cfg.train.steps = 25
     cfg.train.resume = str(TMP / "ckpt_full.pt")
     h2 = train(model2, lambda: batch, cfg)

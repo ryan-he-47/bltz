@@ -57,7 +57,7 @@ def train(
     """batch_fn() -> batch dict (CPU tensors). Returns the log history.
 
     loss_fn(model, batch, cfg) -> scalar loss; defaults to mtp_loss (the
-    ByteField objective). The token baseline passes a wrapper around
+    bltz objective). The token baseline passes a wrapper around
     next_token_loss so both arms share this exact loop (optimizer, schedule,
     spike guard, precision paths)."""
     if loss_fn is None:

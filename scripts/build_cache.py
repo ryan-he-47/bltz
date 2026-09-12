@@ -29,7 +29,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from bytefield.config import parse_cli
+from bltz.config import parse_cli
 
 N_FILES = 14  # sample/10BT/000_00000.parquet ... 013_00000.parquet
 
@@ -39,8 +39,8 @@ def _process_file(args: tuple[int, str, str, int, int, dict[str, Any]]) -> dict[
     file_idx, parquet_path, out_dir, l_max, max_docs, seg_cfg = args
     import pyarrow.parquet as pq
 
-    from bytefield.segment import Segmenter
-    from bytefield.shards import ShardWriter
+    from bltz.segment import Segmenter
+    from bltz.shards import ShardWriter
 
     seg = Segmenter(l_max, 0.0, 0.0)  # deterministic BASE only
     writer = ShardWriter(out_dir, l_max)

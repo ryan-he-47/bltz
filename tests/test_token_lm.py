@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
 
-from bytefield.models.token_lm import TokenLlama, next_token_loss
+from bltz.models.token_lm import TokenLlama, next_token_loss
 
 
 def check(cond: bool, msg: str) -> None:

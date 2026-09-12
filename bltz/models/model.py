@@ -1,4 +1,4 @@
-"""ByteFieldLM: encoder -> backbone -> conditional head wiring."""
+"""BltzLM: encoder -> backbone -> conditional head wiring."""
 from __future__ import annotations
 
 import torch
@@ -9,7 +9,7 @@ from .encoder import SetTransformerEncoder
 from .head import ConditionalByteHead
 
 
-class ByteFieldLM(nn.Module):
+class BltzLM(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         m = cfg.model

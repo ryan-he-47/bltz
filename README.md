@@ -1,4 +1,4 @@
-# ByteField
+# bltz
 
 词表 free 的字节级语言模型——**学院派 LLM 与语言表征维新派之间的和事佬**:
 把分词算法打包出的 token-ish patch 用小 encoder(Set Transformer)编成向量,

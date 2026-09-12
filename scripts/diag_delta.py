@@ -29,12 +29,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import torch
 import torch.nn.functional as F
 
-from bytefield.config import Cfg, parse_cli
-from bytefield.data import build_batch, stream_fineweb_texts
-from bytefield.models import ByteFieldLM
-from bytefield.objectives import mtp_targets
-from bytefield.segment import Segmenter
-from bytefield.shards import ShardReader
+from bltz.config import Cfg, parse_cli
+from bltz.data import build_batch, stream_fineweb_texts
+from bltz.models import BltzLM
+from bltz.objectives import mtp_targets
+from bltz.segment import Segmenter
+from bltz.shards import ShardReader
 
 
 def main() -> None:
@@ -56,7 +56,7 @@ def main() -> None:
     print(f"ckpt: {ckpt}")
     state = torch.load(ckpt, map_location="cpu", weights_only=False)
     mcfg = Cfg(state["cfg"])  # build the model from the ckpt's own config
-    model = ByteFieldLM(mcfg).cuda()
+    model = BltzLM(mcfg).cuda()
     model.load_state_dict(state["model"])
     model.eval()
     print(f"model loaded (step {state.get('step')}, loss {state.get('loss')})")

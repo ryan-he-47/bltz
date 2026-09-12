@@ -1,4 +1,4 @@
-# ByteField authoritative config (twin-scale targets from docs/01-design.md §12)
+# bltz authoritative config (twin-scale targets from docs/01-design.md §12)
 data:
   dataset: fineweb-edu-sample-10BT
   cache_dir: data/fineweb10b

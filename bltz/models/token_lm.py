@@ -1,6 +1,6 @@
 """Token baseline for the Stage-2 twin control (docs/02-construction-plan.md §3).
 
-GPT-2 tokenizer (50,257) + the SAME Backbone class as ByteFieldLM + untied
+GPT-2 tokenizer (50,257) + the SAME Backbone class as BltzLM + untied
 lm_head. Sharing the backbone isolates the comparison to I/O (byte-patch
 encoder/conditional head vs token embedding/lm_head) at matched trunk.
 Loss: standard next-token cross-entropy on shifted labels. BPB comparability

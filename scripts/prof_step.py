@@ -10,10 +10,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
 
-from bytefield.config import parse_cli
-from bytefield.models import ByteFieldLM
-from bytefield.objectives import mtp_loss
-from bytefield.shards import ShardReader
+from bltz.config import parse_cli
+from bltz.models import BltzLM
+from bltz.objectives import mtp_loss
+from bltz.shards import ShardReader
 
 
 def main() -> None:
@@ -26,7 +26,7 @@ def main() -> None:
     batch = {k: v.cuda() for k, v in batch.items()}
 
     torch.manual_seed(0)
-    model = ByteFieldLM(cfg).cuda()
+    model = BltzLM(cfg).cuda()
 
     def step():
         with torch.autocast("cuda", dtype=torch.bfloat16):

@@ -14,10 +14,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
 
-from bytefield.config import parse_cli
-from bytefield.models import ByteFieldLM
-from bytefield.shards import ShardReader
-from bytefield.trainer import train
+from bltz.config import parse_cli
+from bltz.models import BltzLM
+from bltz.shards import ShardReader
+from bltz.trainer import train
 
 
 def main() -> None:
@@ -34,7 +34,7 @@ def main() -> None:
         raise RuntimeError("not enough sequences in cache for the probe")
 
     torch.manual_seed(cfg.train.seed)
-    model = ByteFieldLM(cfg).cuda()
+    model = BltzLM(cfg).cuda()
     n_params = sum(p.numel() for p in model.parameters())
     print(f"model params: {n_params/1e6:.1f}M (twin target ~124M)")
 

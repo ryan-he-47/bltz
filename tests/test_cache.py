@@ -10,9 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import random
 
-from bytefield.data import build_batch
-from bytefield.segment import Segmenter
-from bytefield.shards import ShardReader, ShardWriter
+from bltz.data import build_batch
+from bltz.segment import Segmenter
+from bltz.shards import ShardReader, ShardWriter
 
 TEXTS = [
     "The Byte Latent Transformer encodes bytes into dynamically sized patches. " * 12,
@@ -63,7 +63,7 @@ def main() -> None:
         flat_all, lens_all, _ = reader.get_units(si_u0[0], si_u0[1], min(S + 64, reader.shards[si_u0[0]]["meta"]["n_units"] - si_u0[1]))
         raw_all = bytes(flat_all)
         units = reader.sequence_units(gi, S)
-        from bytefield.segment import augment_unit_bytes
+        from bltz.segment import augment_unit_bytes
         aug = augment_unit_bytes(units, L_MAX, 0.8, 0.8, rng)
         aug_join = b"".join(aug)
         check(raw_all.startswith(aug_join) or aug_join.startswith(raw_all), f"augment roundtrip broken at seq {gi}")

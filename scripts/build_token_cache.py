@@ -21,7 +21,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from bytefield.config import parse_cli
+from bltz.config import parse_cli
 
 N_FILES = 14
 
@@ -32,7 +32,7 @@ def _process_file(args: tuple[int, str, str, int]) -> dict[str, Any]:
     import pyarrow.parquet as pq
     from tokenizers import Tokenizer
 
-    from bytefield.token_cache import EOS_ID, TokenShardWriter
+    from bltz.token_cache import EOS_ID, TokenShardWriter
 
     tok = Tokenizer.from_pretrained("gpt2")
     writer = TokenShardWriter(out_dir)

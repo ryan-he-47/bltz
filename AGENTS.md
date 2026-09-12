@@ -5,25 +5,32 @@
 
 ## 当前状态(2026-09-12)
 
-- **阶段:Stage 1 起跑。** 优雅中断机制已落地(`<ckpt_dir>\STOP` 文件 /
-  Ctrl+C,即存即退,ckpt_every=250;test_interrupt.py 覆盖三路径)。全量缓存
-  构建 detached 进行中(~5h,完成标记 `checkpoints\CACHE_READY`);twin 双臂
-  待缓存完成 + 用户拍板预算选项(本机 A/C;D 集群已被"本机运行"排除)。
+- **阶段:Stage 1 起跑,迁集群。** 本地全量缓存构建已停(用户拍板:本机
+  61-83h 太久 → 集群);集群 twin 双臂筹备中:burgundy.hpc.cityu.edu.hk:22,
+  代码经 GitHub(ryan-he-47/bltz)同步;**home 只放源码/配置/日志/final+best
+  ckpt,数据/缓存/中间 ckpt 全走 scratch;不动其它在跑 job 与项目文件夹;
+  登录节点只跑秒级只读命令**。优雅中断机制已落地(`<ckpt_dir>\STOP` 文件 /
+  Ctrl+C,即存即退,ckpt_every=250;test_interrupt.py 覆盖三路径)。
+- **更名(2026-09-12,用户拍板)**:原名 ByteField → **bltz**
+  (byte-aware learnable tokenizer,致敬 BLT)。包 `bltz/`、模型类 `BltzLM`、
+  入口 `scripts/train_bltz.py`;历史报告(docs/04/05/06)与用户立场归档
+  (`docs/blt_research/ByteField用户立场归档.md`)保留旧名不溯改。
 - **入口文档**:`docs/01` 设计思想 / `docs/02` 施工计划 / `docs/07` 代码架构 /
   `docs/08` 起跑 runbook / `docs/09` 长期路线;冒烟与诊断报告在 `docs/04`、`docs/05`、`docs/06`。
 - commit 史:`706b5a3` 设计文档 → `03504a8` 立场回写+定名 → `b76aacb` 管线+冒烟 →
   `611366a` 缓存层+D-1v2+token基线 → `954a642` 补漏测试 → `1f73c5d` RoPE修复+标定
   → `c9d8edc` fp16 分支 → `9c147c0` 文档日+基线管线+续训rotation →
-  `4500e0b` GradScaler新API。
+  `4500e0b` GradScaler新API → `7139054` 优雅中断+ckpt加密。
 - **警告:旧 smoke ckpt(checkpoints/smoke/)与新 RoPE 约定(半劈)不兼容**,
   仅作历史 artifact(docs/07 §4.1)。
 - 测试 9 个,全绿:test_segment / test_model / test_cache / test_token_lm /
   test_shard_train / test_cache_builder / test_baseline_pipeline / test_resume /
-  test_interrupt。
+  test_interrupt(更名后复跑全绿)。
 
 ## 项目一句话
 
-ByteField(名称已由用户立场文件采用):词表 free 的字节级语言模型——Set Transformer
+bltz(byte-aware learnable tokenizer,原名 ByteField,致敬 BLT):词表 free 的
+字节级语言模型——Set Transformer
 把变长字节 patch 聚成 latent,标准 transformer 骨干做 patch 级自回归,条件神经场风格的
 查询解码头 `(h, Δ) → byte` 做多未来字节预测(MTP),推理时以解码器自身 softmax 熵
 决定变长停止。定位:学院派 LLM 与语言表征维新派的和事佬——token LM 范式 +

@@ -12,10 +12,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
 
-from bytefield.config import parse_cli
-from bytefield.models.token_lm import TokenLlama, next_token_loss
-from bytefield.token_cache import TokenShardReader
-from bytefield.trainer import train
+from bltz.config import parse_cli
+from bltz.models.token_lm import TokenLlama, next_token_loss
+from bltz.token_cache import TokenShardReader
+from bltz.trainer import train
 
 
 def main() -> None:

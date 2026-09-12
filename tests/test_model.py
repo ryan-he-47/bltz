@@ -9,11 +9,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
 
-from bytefield.config import load
-from bytefield.data import build_batch
-from bytefield.models import ByteFieldLM
-from bytefield.objectives import mtp_loss
-from bytefield.segment import Segmenter
+from bltz.config import load
+from bltz.data import build_batch
+from bltz.models import BltzLM
+from bltz.objectives import mtp_loss
+from bltz.segment import Segmenter
 
 
 def check(cond: bool, msg: str) -> None:
@@ -25,13 +25,13 @@ def main() -> None:
     cfg = load("configs/smoke.yaml")
     torch.manual_seed(0)
     seg = Segmenter(cfg.segment.l_max, cfg.segment.p_split, cfg.segment.p_merge)
-    model = ByteFieldLM(cfg).cuda()
+    model = BltzLM(cfg).cuda()
     n_params = sum(p.numel() for p in model.parameters())
     print(f"smoke model params: {n_params/1e6:.2f}M")
 
     texts = [
         "The quick brown fox jumps over the lazy dog. " * 20,
-        "ByteField encodes patches with a set transformer. " * 20,
+        "bltz encodes patches with a set transformer. " * 20,
     ]
     batch = build_batch(texts, seg, cfg.data.n_patches, cfg.segment.l_max)
     batch = {k: v.cuda() for k, v in batch.items()}

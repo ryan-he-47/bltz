@@ -40,8 +40,8 @@ Start-Process $py -ArgumentList "-u scripts\build_token_cache.py configs\baselin
 ### 3.1 本机路径(A/B/C)
 
 ```powershell
-# ByteField 臂(S=512, batch 8, 20k 步)
-Start-Process $py -ArgumentList "-u scripts\train_bytefield.py configs\default.yaml" `
+# bltz 臂(S=512, batch 8, 20k 步)
+Start-Process $py -ArgumentList "-u scripts\train_bltz.py configs\default.yaml" `
   -RedirectStandardOutput checkpoints\twin.out.log -WindowStyle Hidden
 # 基线臂(T=640, batch 8, 20k 步)
 Start-Process $py -ArgumentList "-u scripts\train_token_baseline.py configs\baseline.yaml" `
@@ -63,7 +63,7 @@ Start-Process $py -ArgumentList "-u scripts\train_token_baseline.py configs\base
 
 - 代码:git push 或 scp 同步。**缓存直接在集群构建**(MoB_Head 已验证集群可下
   FineWeb-Edu):sbatch CPU job 跑两个 build 脚本,
-  `--set data.cache_dir=/gpfs1/home/yihe47/bytefield/data/...`。
+  `--set data.cache_dir=/gpfs1/home/yihe47/bltz/data/...`。
 - 训练 sbatch 模板硬要求:`#SBATCH --exclude=gpu-v100s-06`(坏节点);
   fp16:`--set train.bf16=false`;V100 32GB:`--set train.batch=32`。
 - 纪律:登录节点只跑秒级只读命令;**VPN 掉线 = 停手待命,不探测重试**。
@@ -74,7 +74,7 @@ Start-Process $py -ArgumentList "-u scripts\train_token_baseline.py configs\base
    `& $py -u scripts\diag_delta.py checkpoints\twin\best.pt configs\default.yaml`
    合格:per-k acc 衰减 + 逐 Δ 熵极差 > 0.05(docs/05 判据)。
 2. **BPB 对照(D-5 协议,`docs/01` §9)**:同一 held-out 序列(缓存尾部):
-   ByteField 逐字节 CE(上一 patch 末 h 的 patch 内偏移处)vs 基线 next-token
+   bltz 逐字节 CE(上一 patch 末 h 的 patch 内偏移处)vs 基线 next-token
    CE × (tokens/bytes)。**必须附 FLOPs/byte 核算**(docs/07 §5:基线 lm_head
    +34%/token;本臂头查询 ~341M/patch vs 骨干 226M/patch)。评测脚本若未建,
    按 D-5 协议现写(v2 欠账,`docs/07` §6)。

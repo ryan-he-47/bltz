@@ -11,11 +11,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
 
-from bytefield.config import load
-from bytefield.models import ByteFieldLM
-from bytefield.segment import Segmenter
-from bytefield.shards import ShardReader, ShardWriter
-from bytefield.trainer import train
+from bltz.config import load
+from bltz.models import BltzLM
+from bltz.segment import Segmenter
+from bltz.shards import ShardReader, ShardWriter
+from bltz.trainer import train
 
 TEXTS = [
     "The Byte Latent Transformer encodes bytes into dynamically sized patches. " * 30,
@@ -49,7 +49,7 @@ def main() -> None:
     rng = random.Random(0)
 
     torch.manual_seed(cfg.train.seed)
-    model = ByteFieldLM(cfg).cuda()
+    model = BltzLM(cfg).cuda()
 
     def batch_fn() -> dict[str, torch.Tensor]:
         idx = [rng.randrange(n_seq) for _ in range(4)]
