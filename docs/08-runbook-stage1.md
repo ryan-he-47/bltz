@@ -1,15 +1,13 @@
-# 08 — 明日 runbook:全量缓存 + twin 双臂(2026-09-09)
+# 08 — Stage 1 runbook:缓存 + 训练(2026-09-09 起;2026-09-13 POC 策略修订)
 
 > 压缩上下文后的无损起跑指南。顺序:AGENTS.md 当前状态 → 本文 → `docs/07` §3 命令手册。
 > 设计意图在 `docs/01`,长期路线在 `docs/09`。
 
-## 1. 起跑前检查单
+## 1. 状态快览(2026-09-13,全部已决/已建)
 
-- [ ] 磁盘 ~80GB 空闲(30GB parquet + ~50GB 字节缓存 + ~10GB token 缓存 + ckpts)
-- [ ] GPU 空闲(`nvidia-smi`)、git 工作树干净
-- [ ] **8 个测试全绿**:test_segment / test_model / test_cache / test_token_lm /
-      test_shard_train / test_cache_builder / test_baseline_pipeline / test_resume
-- [ ] 用户三项拍板:预算选项(§3)、磁盘确认、缓存下载放行
+- 缓存:字节 + token 各 14/14 全量建成(scratch,`CACHE_READY` 已落)。
+- 训练:**bltz 单臂** job 544172(batch 16 / fp16 / LR 4e-4 / WSD 20k 步 ≈ 14.5h)。
+- 测试 9 个全绿;集群拓扑/纪律/监控见 §3.2;OOM 两轮假死根因见 `docs/07` §4.10。
 
 ## 2. Step 1 — 全量缓存构建(~5h,detached 后台,可断点续跑)
 
@@ -54,8 +52,10 @@ Start-Process $py -ArgumentList "-u scripts\train_token_baseline.py configs\base
   -RedirectStandardOutput checkpoints\baseline_twin.out.log -WindowStyle Hidden
 ```
 
-- **监控**:`Get-Content checkpoints\<run>\train.log -Tail 20 -Wait`(jsonl);
-  预期:loss 快降后平台,decay 段再降(MoB 经验:决定性收益在 decay tail)。
+- **监控**:`Get-Content checkpoints\<run>\train.log -Tail 20 -Wait`(jsonl)。
+  预期(**从头预训练**语境):长而缓的带噪下降,看千步级趋势,别看逐步
+  抖动;不要套 MoB 蒸馏经验的"平台→decay 冲刺"形态(任务性质不同,
+  2026-09-13 用户指正)。POC 阶段看趋势+定性分析,快速迭代,不做对照门。
 - ckpt:`best.pt` / `last.pt` / `ckpt_full.pt`(.1 rotation)每 250 步(~50min);
   续训 `--set train.resume=checkpoints\<run>\ckpt_full.pt`。
 - **优雅中断(腾出 GPU)**:往 run 目录放一个 STOP 文件即可——
@@ -75,9 +75,12 @@ Start-Process $py -ArgumentList "-u scripts\train_token_baseline.py configs\base
   batch 分区拒绝 ≤10CPU/48G 的小 job)→ bltz_bench.sbatch(gpu_v100s,V100
   标定,`--dependency=afterok:<缓存job>`)→ bltz_train_twin.sbatch /
   bltz_train_baseline.sbatch(均:`--exclude=gpu-v100s-06`,fp16
-  `--set train.bf16=false`,batch 32,5 天墙,`--signal=B:SIGTERM@60`
+  `--set train.bf16=false`,batch 16(bench 544090 实测:32 CUDA-OOM,16 =
+  2602ms/step@23.2GB),5 天墙,`--signal=B:SIGTERM@60`
   时限/scancel 触发优雅保存,重提交自动 resume ckpt_full.pt)。
-- **已提交**:543807(缓存,tiny,cpunode-032)/ 543808(bench,挂依赖)。
+- **job 史**:缓存 543807/543893/543972 三轮 OOM 假死(根因 docs/07 §4.10)
+  → 543983 建成;bench 544084(ShardReader OOM 三连杀,31ac21f 修复)
+  → 544090 通过;**正式训练 544172**。
 - **监控**:`ssh -p 22 yihe47@burgundy.hpc.cityu.edu.hk "tail -20
   /gpfs1/home/yihe47/bltz/logs/<name>_<jobid>.out"`;缓存完成标记
   `/gpfs1/scratch/yihe47/bltz/CACHE_READY`。
@@ -86,18 +89,19 @@ Start-Process $py -ArgumentList "-u scripts\train_token_baseline.py configs\base
   `mob_race`(gpu-v100s-04)是用户其它在跑 job,**不许动**。
 - 纪律:登录节点只跑秒级只读命令;**VPN 掉线 = 停手待命,不探测重试**。
 
-## 4. Step 3 — 诊断与对照
+## 4. Step 3 — POC 诊断(看趋势+定性,不设对照门)
 
-1. **D-1(硬指标,本臂)**:
+1. **D-1(架构健康硬指标)**:
    `& $py -u scripts\diag_delta.py checkpoints\twin\best.pt configs\default.yaml`
-   合格:per-k acc 衰减 + 逐 Δ 熵极差 > 0.05(docs/05 判据)。
-2. **BPB 对照(D-5 协议,`docs/01` §9)**:同一 held-out 序列(缓存尾部):
-   bltz 逐字节 CE(上一 patch 末 h 的 patch 内偏移处)vs 基线 next-token
-   CE × (tokens/bytes)。**必须附 FLOPs/byte 核算**(docs/07 §5:基线 lm_head
-   +34%/token;本臂头查询 ~341M/patch vs 骨干 226M/patch)。评测脚本若未建,
-   按 D-5 协议现写(v2 欠账,`docs/07` §6)。
-3. **生成样本**:本臂 θ_stop ∈ {0.5, 1.0, 2.0, ∞} 扫描(infer.py)vs 基线样本。
-4. **报告**:`docs/10-stage1-report.md`(体例继承 simple_point_cloud
+   合格:per-k acc 衰减 + 逐 Δ 熵极差 > 0.05(docs/05 判据)——
+   逐 Δ 熵极差≈0 = 头忽视 Δ = 作弊签名。
+2. **趋势判断**:train.log 千步级 loss 形态(从头预训练 = 长缓带噪下降,
+   看趋势不看逐步抖动;勿套 MoB 蒸馏经验,2026-09-13 用户指正)。
+3. **定性生成样本**:θ_stop ∈ {0.5, 1.0, 2.0, ∞} 扫描(infer.py),人读。
+4. **弱参考 sanity**:同级现成模型(gpt2/qwen/llama 级)做 BPB 锚点;
+   **严格 BPB 对照 + FLOPs/byte 核算(D-5 协议)缓办**,随严格 baseline
+   一起补(docs/01 D10)。
+5. **记录**:趋势/定性结论入实验日志(体例继承 simple_point_cloud
    EXPERIMENT_LOG:数字、曲线、失败与修复,诚实边界)。
 
 ## 5. 失败预案

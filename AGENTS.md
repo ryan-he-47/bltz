@@ -3,14 +3,14 @@
 项目长期约定。新会话先读本文件 + `docs/08-runbook-stage1.md`(起跑)或
 `docs/01-design.md`(设计)。
 
-## 当前状态(2026-09-12)
+## 当前状态(2026-09-13)
 
-- **阶段:Stage 1,集群 bltz 单臂(策略变更 2026-09-13)。** 缓存已全量建成
-  (字节+token 各 14/14);**先 bltz 单臂迭代,严格 baseline 缓跑**(弱参考用
-  gpt2/qwen/llama 同级现成模型,docs/08 §3)。集群 burgundy.hpc.cityu.edu.hk:22,
-  当前:**正式训练 job 544172 排队中**(gpu_v100s;batch 16 / fp16 / LR 4e-4,
-  bench 544090 实测 2602ms/step@23.2GB → 20k 步 ≈ 14.5h;ShardReader 稀疏
-  检查点修复 commit 31ac21f 已验证)。**home 只放源码/配置/日志/final+best
+- **阶段:POC 快速迭代,集群 bltz 单臂(2026-09-13 策略变更,D10)。** 缓存
+  已全量建成(字节+token 各 14/14);**POC 阶段:看趋势+定性分析,先 bltz
+  单臂迭代,严格 baseline 缓跑**(弱参考用 gpt2/qwen/llama 同级现成模型,
+  不设对照门)。集群 burgundy.hpc.cityu.edu.hk:22,当前:**正式训练 job 544172
+  排队中**(gpu_v100s;batch 16 / fp16 / LR 4e-4 / WSD 20k ≈ 14.5h;bench
+  544090 实测 2602ms/step@23.2GB)。**home 只放源码/配置/日志/final+best
   ckpt,数据/缓存/中间 ckpt 全走 scratch;不动其它在跑 job(mob_race 等)与
   项目文件夹;登录节点只跑秒级只读命令。** 优雅中断机制已落地(`<ckpt_dir>\STOP`
   文件 / Ctrl+C,即存即退,ckpt_every=250;test_interrupt.py 覆盖三路径)。
@@ -24,7 +24,9 @@
   `611366a` 缓存层+D-1v2+token基线 → `954a642` 补漏测试 → `1f73c5d` RoPE修复+标定
   → `c9d8edc` fp16 分支 → `9c147c0` 文档日+基线管线+续训rotation →
   `4500e0b` GradScaler新API → `7139054` 优雅中断+ckpt加密 → `8ed22ca`
-  更名bltz → `0557b36` 集群脚本 → `cb0479c` tiny分区+实录 → `fec5058` 缓存OOM修复。
+  更名bltz → `0557b36` 集群脚本 → `cb0479c` tiny分区+实录 → `fec5058` 缓存OOM修复
+  → `c1addc5`+`c2c6ffd` workers4+构建心跳 → `f441bc1` 空提交事故恢复 →
+  `31ac21f` ShardReader稀疏检查点 → `26a5666` POC策略变更 → `b3c81b2` 训练batch16。
 - **警告:旧 smoke ckpt(checkpoints/smoke/)与新 RoPE 约定(半劈)不兼容**,
   仅作历史 artifact(docs/07 §4.1)。
 - 测试 9 个,全绿:test_segment / test_model / test_cache / test_token_lm /
@@ -71,6 +73,10 @@ bltz(byte-aware learnable tokenizer,原名 ByteField,致敬 BLT):词表 free 的
 - 训练守卫:spike_skip = max(10×running median, 2000);Adam β2=0.95;不许擅自改。
 - LR 调度 house rule:可续训/探底 run 默认 **WSD**;weight-only 续训重启的 peak
   不得超过上一 run 的结束 LR。
+- **POC 阶段方法论(2026-09-13 用户拍板,D10)**:看趋势、做定性分析、快速迭代;
+  弱参考用同级现成模型;严格 baseline 与 D-5 对照协议缓办。
+- **不跨场景套经验**:MoB 蒸馏解码头的曲线形态/节奏结论 ≠ 从头预训练 LM;
+  曲线预期按本 run 实测建立(2026-09-13 用户指正,MoB 教训仅限工程纪律)。
 - 测试为脚本式:逐文件 `python tests/test_xxx.py` 直接运行,无 pytest。
 - YAML 配置 + `--set a.b=value` 覆盖;浮点覆盖必须带小数点(`1.0e-8`)。
 - git 只提交代码+文档;`data/`、`checkpoints/`、`runs/`、`viz/` gitignored。
