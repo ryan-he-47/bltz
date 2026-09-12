@@ -6,9 +6,10 @@
 ## 当前状态(2026-09-12)
 
 - **阶段:Stage 1 起跑,迁集群(已提交)。** 本地全量缓存构建已停(用户拍板:本机
-  61-83h 太久 → 集群);集群 burgundy.hpc.cityu.edu.hk:22:**job 543807 缓存构建
-  (tiny 分区)运行中,543808 V100 标定挂依赖**;twin 双臂待 bench 读数后提交
-  (`slurm/`,流程见 docs/08 §3.2)。**home 只放源码/配置/日志/final+best
+  61-83h 太久 → 集群);集群 burgundy.hpc.cityu.edu.hk:22:**job 543893 缓存构建
+  (tiny 分区)运行中,543894 V100 标定挂依赖**(前一轮 543807/543808 因缓存
+  写入器全量 OOM 假死被 scancel,根因与修复见 docs/07 §4.10,commit fec5058);
+  twin 双臂待 bench 读数后提交(`slurm/`,流程见 docs/08 §3.2)。**home 只放源码/配置/日志/final+best
   ckpt,数据/缓存/中间 ckpt 全走 scratch;不动其它在跑 job(mob_race 等)与
   项目文件夹;登录节点只跑秒级只读命令。** 优雅中断机制已落地(`<ckpt_dir>\STOP`
   文件 / Ctrl+C,即存即退,ckpt_every=250;test_interrupt.py 覆盖三路径)。
@@ -21,7 +22,8 @@
 - commit 史:`706b5a3` 设计文档 → `03504a8` 立场回写+定名 → `b76aacb` 管线+冒烟 →
   `611366a` 缓存层+D-1v2+token基线 → `954a642` 补漏测试 → `1f73c5d` RoPE修复+标定
   → `c9d8edc` fp16 分支 → `9c147c0` 文档日+基线管线+续训rotation →
-  `4500e0b` GradScaler新API → `7139054` 优雅中断+ckpt加密。
+  `4500e0b` GradScaler新API → `7139054` 优雅中断+ckpt加密 → `8ed22ca`
+  更名bltz → `0557b36` 集群脚本 → `cb0479c` tiny分区+实录 → `fec5058` 缓存OOM修复。
 - **警告:旧 smoke ckpt(checkpoints/smoke/)与新 RoPE 约定(半劈)不兼容**,
   仅作历史 artifact(docs/07 §4.1)。
 - 测试 9 个,全绿:test_segment / test_model / test_cache / test_token_lm /

@@ -114,13 +114,22 @@ $py="E:\MiniConda\envs\cose2\python.exe"
    pos 累加):循环里一律 `int(x)` 转换(shards.py 已有注释标记)。
 4. `torch.from_numpy` 不能接只读 memmap(告警且行为未定义):一律 `.copy()`。
 5. `torch.cuda.amp.GradScaler` 第一个位置参数是 init_scale **不是 device**;
-   用 `GradScaler(enabled=...)` 纯关键字。
+   现用新 API `torch.amp.GradScaler("cuda", enabled=...)`(旧写法弃用告警,
+   迁移见 commit 4500e0b)。
 6. `expandable_segments:True` 在 Windows 上不支持(告警无害但无效)。
 7. `Select-Object -Last N` 会缓冲到进程结束——长跑任务**不要**接在管道后面;
    用 Start-Process detached + 重定向到文件 + `Get-Content -Tail`。
 8. HF datasets 流式在 Windows 退出时可能抛 WinError 10038(清理噪音,产物无恙)。
 9. LSP 全部 import 报错(yaml/torch/regex/datasets/tokenizers/Cfg 属性)
    是解释器指向误报,环境在 cose2,以实际运行为准。
+10. **整 shard 驻内存 + mp.Pool = OOM 假死**(2026-09-12 集群实测):
+    ShardWriter/TokenShardWriter 曾用 Python list 缓冲全 shard(~8B/entry
+    指针;token id >256 不被小整数缓存时 ~28B/entry),8 worker 峰值 45.6G
+    顶 48G 限额,direct-reclaim 抖动 + OOM 杀 worker 后 **mp.Pool 永久挂死
+    且无报错**(签名:日志停在仅一条 shard 完成打印、sstat AveCPU≈0.5 核、
+    MaxRSS 贴限)。修复:array('b'/'H') 紧凑存储 + frombuffer 零拷贝
+    (fec5058),每 worker ~1.2-2GB。教训:**构建器的全量内存必须实测**,
+    本地小规模 dryrun 永远测不出全量内存剖面。
 
 ## 5. 性能事实(4060 本机实测,docs/06)
 
