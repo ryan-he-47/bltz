@@ -35,10 +35,13 @@ fi
 cd "$REPO"
 echo "[bootstrap] code at $(git rev-parse --short HEAD 2>/dev/null || echo tarball)"
 
-# --- byte patch cache (14 parquet, ~30GB download, 8-worker segmentation) -----
+# --- byte patch cache (14 parquet, ~30GB download, parallel segmentation) -----
+# workers=4 (2026-09-12 lesson: 8 workers under the 48G cgroup + GPFS page cache
+# pressure -> tail workers OOM-killed -> mp.Pool hangs forever. 4 workers keeps
+# anon+cache far from the limit; remaining shards rebuild in ~15 min.)
 $PY -u scripts/build_cache.py configs/default.yaml \
   --set data.cache_dir="$SCRATCH/data/fineweb10b" \
-  --set build.workers=8
+  --set build.workers=4
 
 # --- token cache (parquet reused from HF cache) --------------------------------
 $PY -u scripts/build_token_cache.py configs/baseline.yaml \
