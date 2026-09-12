@@ -18,6 +18,7 @@ REPO=/gpfs1/home/yihe47/bltz/repo
 PY=/gpfs1/home/yihe47/miniconda3/envs/cose2/bin/python
 
 cd "$REPO"
+git pull --ff-only || echo "[bench] git pull failed, using existing checkout"
 
 echo "=== bltz arm, batch 8/16/32, fp16 ==="
 for B in 8 16 32; do

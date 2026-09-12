@@ -96,24 +96,49 @@ class ShardReader:
         if not self.shards:
             raise FileNotFoundError(f"no shards found under {cache_dir}")
         self.l_max = int(self.shards[0]["meta"]["l_max"])
-        # per-shard unit byte offsets (exclusive prefix sums), built lazily
-        self._unit_off: list[np.ndarray] = []
+        # sparse unit->byte offset checkpoints (one int64 per OFF_BLOCK units),
+        # built lazily per shard. 2026-09-13 cluster lesson: a full int64 cumsum
+        # per shard is 573M x 8B = 4.6GB *anonymous* — a batch touching ~8
+        # shards allocated ~37GB and got OOM-killed under the 48G cgroup
+        # (bench bltz arm; the token arm slices by arithmetic and was immune).
+        # Sparse ckpt: ~1.1MB per shard, probe = sum of <=OFF_BLOCK uint8s.
+        self._off_ckpt: list[np.ndarray] = []
+
+    _OFF_BLOCK = 4096
 
     def n_sequences(self, n_patches: int) -> int:
         return sum(s["meta"]["n_units"] // n_patches for s in self.shards)
 
-    def _offsets(self, si: int) -> np.ndarray:
-        while len(self._unit_off) <= si:
-            k = len(self._unit_off)
-            self._unit_off.append(np.cumsum(self.shards[k]["unit_len"], dtype=np.int64))
-        return self._unit_off[si]
+    def _ckpt(self, si: int) -> np.ndarray:
+        """Sparse exclusive prefix sums: ck[j] = byte offset of unit j*_OFF_BLOCK."""
+        while len(self._off_ckpt) <= si:
+            k = len(self._off_ckpt)
+            lens = self.shards[k]["unit_len"]  # memmap uint8
+            n = int(self.shards[k]["meta"]["n_units"])
+            ck = np.empty(n // self._OFF_BLOCK + 1, dtype=np.int64)
+            ck[0] = 0
+            acc = 0
+            B = self._OFF_BLOCK
+            for j in range(1, len(ck)):
+                acc += int(np.asarray(lens[(j - 1) * B : j * B], dtype=np.int64).sum())
+                ck[j] = acc
+            self._off_ckpt.append(ck)
+        return self._off_ckpt[si]
+
+    def _byte_off(self, si: int, u: int) -> int:
+        """Byte offset of unit u (bytes preceding it) via sparse ckpt + local scan."""
+        ck = self._ckpt(si)
+        j, r = divmod(u, self._OFF_BLOCK)
+        if r == 0:
+            return int(ck[j])
+        lens = self.shards[si]["unit_len"]
+        return int(ck[j] + np.asarray(lens[j * self._OFF_BLOCK : u], dtype=np.int64).sum())
 
     def get_units(self, si: int, u0: int, n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Units [u0, u0+n) of shard si -> (flat bytes, lens, flags)."""
         s = self.shards[si]
-        off = self._offsets(si)
-        b0 = 0 if u0 == 0 else int(off[u0 - 1])
-        b1 = int(off[u0 + n - 1])
+        b0 = 0 if u0 == 0 else self._byte_off(si, u0)
+        b1 = self._byte_off(si, u0 + n)
         return (
             np.asarray(s["bytes"][b0:b1]),
             np.asarray(s["unit_len"][u0 : u0 + n]),
@@ -191,8 +216,7 @@ class ShardReader:
         need = n_patches - len(units)
         if extra_u0 + need > s["meta"]["n_units"]:
             return units  # short; caller falls back
-        off = self._offsets(si)
-        pos = 0 if extra_u0 == 0 else int(off[extra_u0 - 1])
+        pos = self._byte_off(si, extra_u0)
         for Ln in np.asarray(s["unit_len"][extra_u0 : extra_u0 + need]):
             n_bytes = int(Ln)  # uint8 scalar would overflow on pos arithmetic (NumPy 2)
             units.append(bytes(np.asarray(s["bytes"][pos : pos + n_bytes])))
