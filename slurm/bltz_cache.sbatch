@@ -3,7 +3,7 @@
 # cache -> build token cache. Heavy data stays on scratch; home holds code/logs.
 # Submit: sbatch bltz_cache.sbatch   (dependency-free, first job of the stage)
 #SBATCH --job-name=bltz_cache
-#SBATCH --partition=batch
+#SBATCH --partition=tiny
 #SBATCH --cpus-per-task=10
 #SBATCH --mem=48G
 #SBATCH --time=1-00:00:00

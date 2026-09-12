@@ -59,13 +59,25 @@ Start-Process $py -ArgumentList "-u scripts\train_token_baseline.py configs\base
 - 双臂可同时开(各自 ~4GB,合计 ~8GB 临界——**建议串行**,或第二臂等第一臂
   过了 warmup 再开,防分配器抖动)。
 
-### 3.2 集群路径(D,推荐)
+### 3.2 集群路径(D,已落地 2026-09-12)
 
-- 代码:git push 或 scp 同步。**缓存直接在集群构建**(MoB_Head 已验证集群可下
-  FineWeb-Edu):sbatch CPU job 跑两个 build 脚本,
-  `--set data.cache_dir=/gpfs1/home/yihe47/bltz/data/...`。
-- 训练 sbatch 模板硬要求:`#SBATCH --exclude=gpu-v100s-06`(坏节点);
-  fp16:`--set train.bf16=false`;V100 32GB:`--set train.batch=32`。
+- **拓扑**:代码在 home `/gpfs1/home/yihe47/bltz/repo`(job 内 git clone 自
+  GitHub,tarball fallback 在 `/gpfs1/scratch/yihe47/bltz_bootstrap.tar.gz`);
+  数据/缓存/中间 ckpt 全在 scratch `/gpfs1/scratch/yihe47/bltz/`;
+  日志 `~/bltz/logs/`,final+best 归档 `~/bltz/ckpt_final/`。
+- **脚本**(`slurm/`,随仓库同步):bltz_cache.sbatch(CPU,**tiny 分区**——
+  batch 分区拒绝 ≤10CPU/48G 的小 job)→ bltz_bench.sbatch(gpu_v100s,V100
+  标定,`--dependency=afterok:<缓存job>`)→ bltz_train_twin.sbatch /
+  bltz_train_baseline.sbatch(均:`--exclude=gpu-v100s-06`,fp16
+  `--set train.bf16=false`,batch 32,5 天墙,`--signal=B:SIGTERM@60`
+  时限/scancel 触发优雅保存,重提交自动 resume ckpt_full.pt)。
+- **已提交**:543807(缓存,tiny,cpunode-032)/ 543808(bench,挂依赖)。
+- **监控**:`ssh -p 22 yihe47@burgundy.hpc.cityu.edu.hk "tail -20
+  /gpfs1/home/yihe47/bltz/logs/<name>_<jobid>.out"`;缓存完成标记
+  `/gpfs1/scratch/yihe47/bltz/CACHE_READY`。
+- **注意**:HF 下载走 `HF_HOME=$SCRATCH/hf_cache`(防 home 配额);
+  集群 cose2 = torch 2.5.1+cu121(fp16 路径已适配,numpy 2.4.6);
+  `mob_race`(gpu-v100s-04)是用户其它在跑 job,**不许动**。
 - 纪律:登录节点只跑秒级只读命令;**VPN 掉线 = 停手待命,不探测重试**。
 
 ## 4. Step 3 — 诊断与对照

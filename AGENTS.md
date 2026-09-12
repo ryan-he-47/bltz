@@ -5,12 +5,13 @@
 
 ## 当前状态(2026-09-12)
 
-- **阶段:Stage 1 起跑,迁集群。** 本地全量缓存构建已停(用户拍板:本机
-  61-83h 太久 → 集群);集群 twin 双臂筹备中:burgundy.hpc.cityu.edu.hk:22,
-  代码经 GitHub(ryan-he-47/bltz)同步;**home 只放源码/配置/日志/final+best
-  ckpt,数据/缓存/中间 ckpt 全走 scratch;不动其它在跑 job 与项目文件夹;
-  登录节点只跑秒级只读命令**。优雅中断机制已落地(`<ckpt_dir>\STOP` 文件 /
-  Ctrl+C,即存即退,ckpt_every=250;test_interrupt.py 覆盖三路径)。
+- **阶段:Stage 1 起跑,迁集群(已提交)。** 本地全量缓存构建已停(用户拍板:本机
+  61-83h 太久 → 集群);集群 burgundy.hpc.cityu.edu.hk:22:**job 543807 缓存构建
+  (tiny 分区)运行中,543808 V100 标定挂依赖**;twin 双臂待 bench 读数后提交
+  (`slurm/`,流程见 docs/08 §3.2)。**home 只放源码/配置/日志/final+best
+  ckpt,数据/缓存/中间 ckpt 全走 scratch;不动其它在跑 job(mob_race 等)与
+  项目文件夹;登录节点只跑秒级只读命令。** 优雅中断机制已落地(`<ckpt_dir>\STOP`
+  文件 / Ctrl+C,即存即退,ckpt_every=250;test_interrupt.py 覆盖三路径)。
 - **更名(2026-09-12,用户拍板)**:原名 ByteField → **bltz**
   (byte-aware learnable tokenizer,致敬 BLT)。包 `bltz/`、模型类 `BltzLM`、
   入口 `scripts/train_bltz.py`;历史报告(docs/04/05/06)与用户立场归档
