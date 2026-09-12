@@ -56,6 +56,12 @@ def _process_file(args: tuple[int, str, str, int, int, dict[str, Any]]) -> dict[
             n_docs += 1
         if max_docs and n_docs >= max_docs:
             break
+        # heartbeat (2026-09-12: two OOM-hang stalls were invisible for hours
+        # because the builder printed only at shard completion; silence between
+        # heartbeats = stuck worker, visible within a minute)
+        if n_docs % 50000 < 2000:
+            print(f"  [shard-{file_idx:05d}] {n_docs} docs, "
+                  f"{writer.n_units/1e6:.0f}M units, {time.time()-t0:.0f}s", flush=True)
     meta = writer.close(seg_cfg)
     meta["file_idx"] = file_idx
     meta["sec"] = round(time.time() - t0, 1)

@@ -49,6 +49,10 @@ def _process_file(args: tuple[int, str, str, int]) -> dict[str, Any]:
         n_docs += len(texts)
         if max_docs and n_docs >= max_docs:
             break
+        # heartbeat (same 2026-09-12 silent-stall lesson as build_cache.py)
+        if n_docs % 50000 < 1000:
+            print(f"  [shard-{file_idx:05d}] {n_docs} docs, "
+                  f"{writer.n_tokens/1e6:.0f}M tokens, {time.time()-t0:.0f}s", flush=True)
     meta = writer.close(50257, "gpt2")
     meta["file_idx"] = file_idx
     meta["sec"] = round(time.time() - t0, 1)
