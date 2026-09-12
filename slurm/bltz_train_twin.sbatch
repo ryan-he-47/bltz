@@ -1,5 +1,8 @@
 #!/bin/bash
-# bltz Stage 1 - bltz arm twin training (V100, fp16+GradScaler, batch 32).
+# bltz Stage 1 - bltz arm training (V100, fp16+GradScaler).
+# batch 16 (bench 544090: batch 32 CUDA-OOM at S=512 on 32G V100; batch 16 =
+# 2602ms/step & 23.2GB VRAM, faster than batch 8's 2985ms/step -> 20k ≈ 14.5h).
+# LR kept at 4e-4 (batch-8 calibration; under-scaled for 16, safe for iteration).
 # Intermediate checkpoints on scratch; best/last + train.log archived to home.
 # Time limit / scancel -> SIGTERM 60s early -> trainer saves ckpt_full and exits
 # (graceful interrupt, commit 7139054); resubmit to auto-resume.
@@ -34,7 +37,7 @@ fi
 
 $PY -u scripts/train_bltz.py configs/default.yaml \
   --set data.cache_dir="$SCRATCH/data/fineweb10b" \
-  --set train.bf16=false --set train.batch=32 \
+  --set train.bf16=false --set train.batch=16 \
   --set train.ckpt_dir="$CKPT" \
   ${RESUME[@]+"${RESUME[@]}"}
 
