@@ -50,8 +50,12 @@ Start-Process $py -ArgumentList "-u scripts\train_token_baseline.py configs\base
 
 - **监控**:`Get-Content checkpoints\<run>\train.log -Tail 20 -Wait`(jsonl);
   预期:loss 快降后平台,decay 段再降(MoB 经验:决定性收益在 decay tail)。
-- ckpt:`best.pt` / `last.pt` / `ckpt_full.pt`(.1) 每 1000 步;
+- ckpt:`best.pt` / `last.pt` / `ckpt_full.pt`(.1 rotation)每 250 步(~50min);
   续训 `--set train.resume=checkpoints\<run>\ckpt_full.pt`。
+- **优雅中断(腾出 GPU)**:往 run 目录放一个 STOP 文件即可——
+  `New-Item checkpoints\<run>\STOP -ItemType File`;当前步结束后自动保存
+  ckpt_full.pt 并干净退出(STOP 被消费,不会误伤后续续训)。前台进程也可
+  Ctrl+C(第二次 Ctrl+C = 硬退,仍会尽力保存)。恢复:上面的 resume 命令。
 - 双臂可同时开(各自 ~4GB,合计 ~8GB 临界——**建议串行**,或第二臂等第一臂
   过了 warmup 再开,防分配器抖动)。
 
@@ -80,6 +84,9 @@ Start-Process $py -ArgumentList "-u scripts\train_token_baseline.py configs\base
 
 ## 5. 失败预案
 
+- **中断腾出算力(本机常态)**:`New-Item checkpoints\<run>\STOP -ItemType File`
+  → 即存即退;事后 `--set train.resume=checkpoints\<run>\ckpt_full.pt` 接着跑。
+  硬杀/断电最坏丢 250 步(~50min);SIGINT/SIGTERM 同样走保存路径。
 - **spike**:guard(max(10×median, 2000))自动跳过,日志里 `event=spike_skip`;
   真崩溃 → kill → `--set train.resume=.../ckpt_full.pt` 续训;
   最新态已污染则用 `ckpt_full.pt.1`。降 LR 重启属新 run 决策,**问用户**。

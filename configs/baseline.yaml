@@ -36,6 +36,7 @@ train:
   seed: 1234
   ckpt_dir: checkpoints/baseline_twin
   log_every: 50
+  ckpt_every: 250           # 与 default.yaml 同步:硬杀最坏损失 ~50min
   val_every: 1000
 
 build:

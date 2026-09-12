@@ -67,6 +67,11 @@ r(目标在 patch 内第几字节,D-1 分层用)。`mtp_loss` 分块算 CE(loss.
 **ckpt(torch.save)**:`{model: state_dict, cfg: dict, step, loss}`;
 train.ckpt_dir 下 `best.pt`(按 train loss)+ `last.pt`;诊断用
 `Cfg(state["cfg"])` 重建模型,保证维度一致。
+**断点 ckpt_full.pt**(+.1 rotation):全状态(model+opt+RNG+scaler+step+
+med_hist/best/skips),每 `train.ckpt_every`(默认 250)步;**优雅中断**=
+`<ckpt_dir>\STOP` 文件(detached 进程唯一通道)或 Ctrl+C/SIGTERM(第二次
+Ctrl+C 硬退仍尽力存),循环顶检测、即存即退,STOP 用后自删;中断处最多
+重复 1 步,绝不跳步。
 
 **Cfg**:动态属性(load 时 setattr),LSP 报 "Cannot access attribute" 全是
 误报;`--set a.b=value` 覆盖,**浮点必须带小数点**(`1.0e-8`,否则 yaml 当字符串)。
@@ -77,10 +82,11 @@ train.ckpt_dir 下 `best.pt`(按 train loss)+ `last.pt`;诊断用
 $env:PYTHONPATH="E:\Trash_things\char_lm"
 $py="E:\MiniConda\envs\cose2\python.exe"
 
-# 测试(7 个,全绿才算起跑线就绪)
+# 测试(9 个,全绿才算起跑线就绪)
 & $py tests\test_segment.py; & $py tests\test_model.py; & $py tests\test_cache.py
 & $py tests\test_token_lm.py; & $py tests\test_shard_train.py
 & $py tests\test_cache_builder.py; & $py tests\test_baseline_pipeline.py
+& $py tests\test_resume.py; & $py tests\test_interrupt.py
 
 # 全量缓存(明天第一步;~30GB 下载复用 hf cache,分割 ~4h / token ~1h)
 & $py -u scripts\build_cache.py configs\default.yaml

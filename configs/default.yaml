@@ -49,6 +49,7 @@ train:
   seed: 1234
   ckpt_dir: checkpoints/twin
   log_every: 50
+  ckpt_every: 250           # ~50min autosave(硬杀/断电最坏损失); 优雅中断走 STOP/SIGINT 即存即退
   val_every: 1000
 
 infer:
