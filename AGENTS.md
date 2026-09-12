@@ -8,8 +8,9 @@
 - **阶段:Stage 1,集群 bltz 单臂(策略变更 2026-09-13)。** 缓存已全量建成
   (字节+token 各 14/14);**先 bltz 单臂迭代,严格 baseline 缓跑**(弱参考用
   gpt2/qwen/llama 同级现成模型,docs/08 §3)。集群 burgundy.hpc.cityu.edu.hk:22,
-  当前:bench 544090 重验中(ShardReader 全量 cumsum OOM 三连杀修复,
-  commit 31ac21f),通过后提交 bltz 正式训练(`slurm/bltz_train_twin.sbatch`)。**home 只放源码/配置/日志/final+best
+  当前:**正式训练 job 544172 排队中**(gpu_v100s;batch 16 / fp16 / LR 4e-4,
+  bench 544090 实测 2602ms/step@23.2GB → 20k 步 ≈ 14.5h;ShardReader 稀疏
+  检查点修复 commit 31ac21f 已验证)。**home 只放源码/配置/日志/final+best
   ckpt,数据/缓存/中间 ckpt 全走 scratch;不动其它在跑 job(mob_race 等)与
   项目文件夹;登录节点只跑秒级只读命令。** 优雅中断机制已落地(`<ckpt_dir>\STOP`
   文件 / Ctrl+C,即存即退,ckpt_every=250;test_interrupt.py 覆盖三路径)。
