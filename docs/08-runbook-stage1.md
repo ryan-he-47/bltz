@@ -28,7 +28,13 @@ Start-Process $py -ArgumentList "-u scripts\build_token_cache.py configs\baselin
 - 验收:14 个 shard-NNNNN + meta.json;用 ShardReader/TokenShardReader 抽查
   (n_sequences、首条序列内容);记录 unit 统计(avg 单元字节数、总 units/tokens)。
 
-## 3. Step 2 — twin 双臂训练(预算选项,用户拍板)
+## 3. Step 2 — 训练(策略变更 2026-09-13,用户拍板)
+
+**先 bltz 单臂迭代,严格 baseline 缓跑。** 算力有限,优先把 bltz LM 本身
+跑明白;BPB 弱参考用 gpt2/qwen/llama 同量级现成模型;等 bltz LM 收敛得
+差不多了再补严格 baseline(基线臂脚本与 token 缓存已就绪,随时可挂)。
+(原 twin 双臂预算表保留在下文作历史参考;缓存已全量建成:字节 14/14 +
+token 14/14,2026-09-13。)
 
 | 选项 | 改动 | 时长(11-15s/步) | 备注 |
 |---|---|---|---|

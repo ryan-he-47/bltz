@@ -5,11 +5,11 @@
 
 ## 当前状态(2026-09-12)
 
-- **阶段:Stage 1 起跑,迁集群(已提交)。** 本地全量缓存构建已停(用户拍板:本机
-  61-83h 太久 → 集群);集群 burgundy.hpc.cityu.edu.hk:22:**job 543893 缓存构建
-  (tiny 分区)运行中,543894 V100 标定挂依赖**(前一轮 543807/543808 因缓存
-  写入器全量 OOM 假死被 scancel,根因与修复见 docs/07 §4.10,commit fec5058);
-  twin 双臂待 bench 读数后提交(`slurm/`,流程见 docs/08 §3.2)。**home 只放源码/配置/日志/final+best
+- **阶段:Stage 1,集群 bltz 单臂(策略变更 2026-09-13)。** 缓存已全量建成
+  (字节+token 各 14/14);**先 bltz 单臂迭代,严格 baseline 缓跑**(弱参考用
+  gpt2/qwen/llama 同级现成模型,docs/08 §3)。集群 burgundy.hpc.cityu.edu.hk:22,
+  当前:bench 544090 重验中(ShardReader 全量 cumsum OOM 三连杀修复,
+  commit 31ac21f),通过后提交 bltz 正式训练(`slurm/bltz_train_twin.sbatch`)。**home 只放源码/配置/日志/final+best
   ckpt,数据/缓存/中间 ckpt 全走 scratch;不动其它在跑 job(mob_race 等)与
   项目文件夹;登录节点只跑秒级只读命令。** 优雅中断机制已落地(`<ckpt_dir>\STOP`
   文件 / Ctrl+C,即存即退,ckpt_every=250;test_interrupt.py 覆盖三路径)。
