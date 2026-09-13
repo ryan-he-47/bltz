@@ -7,9 +7,11 @@
 
 - **阶段:POC 快速迭代,集群 bltz 单臂(2026-09-13 策略变更,D10)。** 首轮
   20k 已跑完(run 544172;诊断档案 **`docs/10-poc-diag-20k.md`**——七视角
-  定性结果、LR 探针始末、D11 词界停止落地);**下一步待用户调研拍板**
-  (λ/n/头冲突调参 vs 60k 长跑,档案 §6)。缓存已全量建成(字节+token 各
-  14/14);严格 baseline 缓跑。集群 burgundy.hpc.cityu.edu.hk:22。**home
+  定性结果、LR 探针始末、D11 词界停止落地);gcos 修正测量(docs/11/12 协议)
+  判"冲突"为测量伪影(§3.2b:∇_h 全非负、负值住头不住骨干、随机对照翻正、
+  k=3 如设计轻度牺牲)。**当前:60k 长 run job 547403 排队中**(全新
+  WSD60000 不续 20k;batch16/fp16/4e-4,~43.4h;里程碑 5000 步一份全程在,
+  轨迹全段复查用)。缓存已全量建成(字节+token 各 14/14);严格 baseline 缓跑。集群 burgundy.hpc.cityu.edu.hk:22。**home
   只放源码/配置/日志/final+best ckpt,数据/缓存/中间 ckpt 全走 scratch(配额
   300GB);不动其它在跑 job(mob_race 等)与项目文件夹;登录节点只跑秒级
   只读命令。** 优雅中断(`<ckpt_dir>\STOP` / Ctrl+C,即存即退,ckpt_every=250)

@@ -80,7 +80,9 @@ Start-Process $py -ArgumentList "-u scripts\train_token_baseline.py configs\base
   时限/scancel 触发优雅保存,重提交自动 resume ckpt_full.pt)。
 - **job 史**:缓存 543807/543893/543972 三轮 OOM 假死(根因 docs/07 §4.10)
   → 543983 建成;bench 544084(ShardReader OOM 三连杀,31ac21f 修复)
-  → 544090 通过;**正式训练 544172**。
+  → 544090 通过;**正式训练 544172**(20k 完成);LR 探针 544364(空跑事故)
+  /546477(涨回,docs/10 §2);清理 546991;**60k 长 run 547403**
+  (gcos 修正测量判良性后,docs/10 §3.2b)。
 - **监控**:`ssh -p 22 yihe47@burgundy.hpc.cityu.edu.hk "tail -20
   /gpfs1/home/yihe47/bltz/logs/<name>_<jobid>.out"`;缓存完成标记
   `/gpfs1/scratch/yihe47/bltz/CACHE_READY`。
