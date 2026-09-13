@@ -11,6 +11,7 @@ from __future__ import annotations
 import random
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -28,6 +29,7 @@ import torch
 import torch.nn.functional as F
 
 from bltz.config import Cfg
+from bltz.data import collate_sequences, tensorize_units
 from bltz.infer import generate
 from bltz.models import BltzLM
 from bltz.objectives import mtp_targets
@@ -44,6 +46,11 @@ if "--cache" in args:
     i = args.index("--cache")
     CACHE = args[i + 1]
     del args[i : i + 2]
+traj_extra: list[str] = []
+if "gcos_traj" in args:
+    i = args.index("gcos_traj")
+    traj_extra = args[i + 1 :]
+    args = args[: i + 1]
 todo = args or SECTIONS
 
 
@@ -70,6 +77,221 @@ def char_class(b: int) -> str:
     if b in (46, 44, 33, 63, 59, 58, 39, 34, 45, 40, 41):
         return "punct"
     return "other"
+
+
+# ----------------------------------------------------------------------------
+# gcos_ext: corrected gcos measurement per docs/11 (D-3 spec = ∇_h, not
+# full-param). Red lines honored: old sec_gcos untouched; no verdict gates;
+# >=10 batches with inter-batch range; nothing outside this script modified.
+
+_GCOS_PAIRS = ((1, 2), (1, 3), (2, 3))
+
+
+def _masked_task_loss(h: torch.Tensor, q: dict, w: torch.Tensor) -> torch.Tensor:
+    """Weighted CE of MTP queries under an explicit weight map w (B, S-1, k_max).
+    h: (B, S-1, d) backbone output (graph-carrying). Mirrors mtp_loss's query
+    construction exactly (mtp_targets is the single source of truth)."""
+    B, Sq, k_max = w.shape
+    j_all = q["j_idx"].view(1, Sq, 1).expand(B, Sq, k_max).reshape(-1)
+    d_all = q["delta"].view(1, 1, k_max).expand(B, Sq, k_max).reshape(-1)
+    t_all = q["targets"].reshape(-1)
+    b_all = torch.arange(B, device=DEV).view(B, 1, 1).expand(B, Sq, k_max).reshape(-1)
+    sel = (w.reshape(-1) > 0).nonzero(as_tuple=True)[0]
+    logits = model.head(h[b_all[sel], j_all[sel]], d_all[sel])
+    ce = F.cross_entropy(logits.float(), t_all[sel], reduction="none")
+    return (ce * w.reshape(-1)[sel]).sum() / w.sum().clamp_min(1e-8)
+
+
+# module groups in model.parameters() registration order (encoder, backbone,
+# head{delta_emb, mlp, out}) — used to slice ONE full-param grad call per task
+# into per-module vectors (19 separate autograd traversals was far too slow).
+_PARAM_GROUPS = ["encoder", "backbone", "head.delta_emb", "head.mlp", "head.out"]
+
+
+def _group_offsets(params: list) -> dict[str, tuple[int, int]]:
+    groups = [
+        ("encoder", list(model.encoder.parameters())),
+        ("backbone", list(model.backbone.parameters())),
+        ("head.delta_emb", list(model.head.delta_emb.parameters())),
+        ("head.mlp", list(model.head.mlp.parameters())),
+        ("head.out", list(model.head.out.parameters())),
+    ]
+    offs: dict[str, tuple[int, int]] = {}
+    acc = 0
+    for name, ps in groups:
+        n = sum(p.numel() for p in ps)
+        offs[name] = (acc, acc + n)
+        acc += n
+    assert acc == sum(p.numel() for p in params), "group partition mismatch"
+    return offs
+
+
+def _gcos_point(reader, mcfg, n_batches: int, seed: int, randomize: bool) -> dict[str, Any]:
+    """One measurement point: per-k ∇_h cosines, per-module cosines, combined
+    alignment, and (batch 0) the micro-step sub-loss change. randomize=True
+    replaces byte content with IID random bytes (same unit lengths) = T4."""
+    S = mcfg.data.n_patches
+    l_max = mcfg.segment.l_max
+    n, lam, k_max = mcfg.loss.n_patches_ahead, float(mcfg.loss.lam), mcfg.model.k_max
+    n_seq = reader.n_sequences(S)
+    rng = random.Random(seed)
+    nrng = np.random.default_rng(seed)
+
+    out: dict[str, list] = {
+        f"h_cos{a}{b}": [] for a, b in _GCOS_PAIRS
+    }
+    for gname in _PARAM_GROUPS:
+        for a, b in _GCOS_PAIRS:
+            out[f"mod:{gname}:{a}{b}"] = []
+    for kv in (1, 2, 3):
+        out[f"comb_cos{kv}"] = []
+    out["dl"] = []  # (dL1, dL2, dL3) micro-step records
+
+    for bi in range(n_batches):
+        idx = [rng.randrange(n_seq) for _ in range(4)]
+        if not randomize:
+            batch = reader.make_batch(idx, S, augment=False, p_split=0.0, p_merge=0.0, rng=rng)
+        else:
+            seqs = []
+            for gi in idx:
+                units = reader.sequence_units(gi, S)
+                lens = torch.tensor([len(u) for u in units], dtype=torch.long)
+                F_len = int(lens.sum())
+                rand_flat = torch.from_numpy(
+                    nrng.integers(0, 256, F_len, dtype=np.uint8).copy()
+                ).long()
+                seqs.append(tensorize_units(rand_flat, lens, l_max))
+            batch = collate_sequences(seqs)
+        batch = {k: v.to(DEV) for k, v in batch.items()}
+
+        q = mtp_targets(batch, n, lam, k_max)
+        h = model(batch["byte_ids"], batch["pad_mask"])[:, : S - 1]
+        w_full = q["w"]
+        w_k = {kv: w_full * (q["k"] == kv).float() for kv in (1, 2, 3)}
+        loss_k = {kv: _masked_task_loss(h, q, w_k[kv]) for kv in (1, 2, 3)}
+        loss_full = _masked_task_loss(h, q, w_full)
+
+        # T1: hidden-state gradients
+        gh = {}
+        for kv in (1, 2, 3):
+            gh[kv] = torch.autograd.grad(loss_k[kv], h, retain_graph=True)[0].reshape(-1).float()
+        for a, b in _GCOS_PAIRS:
+            out[f"h_cos{a}{b}"].append(F.cosine_similarity(gh[a], gh[b], dim=0).item())
+
+        # T2: ONE full-param grad call per task; per-module cosines by slicing
+        params = list(model.parameters())
+        offs = _group_offsets(params)
+        g_k_full: dict[int, torch.Tensor] = {}
+        for kv in (1, 2, 3):
+            g = torch.autograd.grad(loss_k[kv], params, retain_graph=True)
+            g_k_full[kv] = torch.cat([x.reshape(-1).float() for x in g])
+        for gname in _PARAM_GROUPS:
+            o0, o1 = offs[gname]
+            for a, b in _GCOS_PAIRS:
+                out[f"mod:{gname}:{a}{b}"].append(
+                    F.cosine_similarity(g_k_full[a][o0:o1], g_k_full[b][o0:o1], dim=0).item()
+                )
+
+        # T3: combined-gradient alignment (true full loss, full params)
+        g_comb = torch.autograd.grad(loss_full, params, retain_graph=True)
+        g_comb = torch.cat([x.reshape(-1).float() for x in g_comb])
+        for kv in (1, 2, 3):
+            out[f"comb_cos{kv}"].append(F.cosine_similarity(g_comb, g_k_full[kv], dim=0).item())
+
+        # T3b: micro-step on batch 0 — one combined step, per-k sub-loss change
+        if bi == 0:
+            eta = 4e-4
+            with torch.no_grad():
+                saved = [p.detach().clone() for p in params]
+                ofs = 0
+                for p in params:
+                    n_ = p.numel()
+                    p -= eta * g_comb[ofs : ofs + n_].view_as(p).to(p.dtype)
+                    ofs += n_
+                with torch.autocast("cuda", dtype=torch.bfloat16, enabled=bool(mcfg.train.bf16)):
+                    h2 = model(batch["byte_ids"], batch["pad_mask"])[:, : S - 1]
+                    dl = tuple(
+                        float(_masked_task_loss(h2, q, w_k[kv]).item() - loss_k[kv].item())
+                        for kv in (1, 2, 3)
+                    )
+                for p, sp in zip(params, saved):
+                    p.copy_(sp)
+            out["dl"].append(dl)
+
+        del batch, q, h, gh, g_k_full, g_comb
+        torch.cuda.empty_cache()
+    return out
+
+
+def _gcos_report(tag: str, res: dict[str, Any]) -> None:
+    def ms(v: list[float]) -> str:
+        return f"{np.mean(v):+.3f} [{min(v):+.3f},{max(v):+.3f}]"
+
+    print(f"\n--- {tag} ---")
+    print("T1 ∇_h cosine (D-3 spec):")
+    for a, b in _GCOS_PAIRS:
+        print(f"  k{a}-k{b}: {ms(res[f'h_cos{a}{b}'])}")
+    print("T2 per-module cosines:")
+    for gname in _PARAM_GROUPS:
+        row = "  ".join(f"{a}{b}:{ms(res[f'mod:{gname}:{a}{b}'])}" for a, b in _GCOS_PAIRS)
+        print(f"  {gname:15s} {row}")
+    print("T3 combined-update alignment cos(g_combined, g_k):")
+    for kv in (1, 2, 3):
+        print(f"  k={kv}: {ms(res[f'comb_cos{kv}'])}")
+    if res["dl"]:
+        dl = np.array(res["dl"])
+        print("T3b micro-step (eta=4e-4) mean dL_k (negative = improved):")
+        print(f"  k=1 {dl[:,0].mean():+.4f}  k=2 {dl[:,1].mean():+.4f}  k=3 {dl[:,2].mean():+.4f}")
+
+
+def sec_gcos_ext() -> None:
+    """docs/11 T1-T4 on the loaded ckpt: ∇_h + per-module + combined alignment
+    + random-byte control. >=10 batches, mean + inter-batch range."""
+    v = torch.randn(4096)
+    assert abs(F.cosine_similarity(v, v, dim=0).item() - 1.0) < 1e-5
+    print("self-check cos(v,v)=1: OK")
+
+    reader = ShardReader(CACHE)
+    res = _gcos_point(reader, mcfg, n_batches=10, seed=0, randomize=False)
+    _gcos_report("T1-T3 real data (10 batches)", res)
+    res_r = _gcos_point(reader, mcfg, n_batches=10, seed=100, randomize=True)
+    _gcos_report("T4 random-byte control (10 batches)", res_r)
+    print("\nreading (descriptive, no gates): h_cos near/above 0 => trunk not torn; "
+          "negative concentrated in head.* => readout geometry; random-control "
+          "h_cos~0 => data-driven near/far structure, still-strong-neg => head artifact")
+
+
+def sec_gcos_traj(extra_ckpts: list[str]) -> None:
+    """docs/11 T5: ∇_h cosine trajectory across ckpts. NOTE: the 20k run predates
+    the milestone feature — only {12000(frozen), 18920(best), 20000(last)} survive."""
+    reader = ShardReader(CACHE)
+    pts = [CKPT] + list(extra_ckpts)
+    rows = []
+    global model, state
+    for p in pts:
+        model, mcfg_t, state_t = load_model(p)
+        globals()["mcfg"] = mcfg_t
+        res = _gcos_point(reader, mcfg_t, n_batches=6, seed=0, randomize=False)
+        rows.append((state_t["step"], res))
+        print(f"point step={state_t['step']}: "
+              + "  ".join(f"h{a}{b}={np.mean(res[f'h_cos{a}{b}']):+.3f}" for a, b in _GCOS_PAIRS))
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    for a, b in _GCOS_PAIRS:
+        xs = [s for s, _ in rows]
+        ys = [np.mean(r[f"h_cos{a}{b}"]) for _, r in rows]
+        yerr = [np.std(r[f"h_cos{a}{b}"]) for _, r in rows]
+        ax.errorbar(xs, ys, yerr=yerr, marker="o", capsize=3, label=f"h_cos k{a}-k{b}")
+    ax.axhline(0, color="gray", lw=0.8, ls=":")
+    ax.set_xlabel("step")
+    ax.set_ylabel("∇_h cosine")
+    ax.set_title("gcos trajectory (surviving points only; full traj needs next run's milestones)")
+    ax.legend()
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    VIZ.mkdir(exist_ok=True)
+    fig.savefig(VIZ / "gcos_traj.png", dpi=150)
+    print("saved viz/gcos_traj.png")
 
 
 # ----------------------------------------------------------------------------
@@ -453,6 +675,7 @@ def sec_bemb() -> None:
 secs = {
     "gen": sec_gen,
     "gcos": sec_gcos,
+    "gcos_ext": sec_gcos_ext,
     "edelta": sec_edelta,
     "enc": sec_enc,
     "bound": sec_bound,
@@ -461,5 +684,8 @@ secs = {
 }
 for name in todo:
     print(f"\n{'='*70}\n[{name}]\n{'='*70}")
-    secs[name]()
+    if name == "gcos_traj":
+        sec_gcos_traj(traj_extra)
+    else:
+        secs[name]()
 print("\ndiag_poc.py: DONE")
