@@ -26,6 +26,7 @@
 | `docs/07-code-architecture.md` | 代码架构与运维手册(数据结构/命令/坑位/性能事实) |
 | `docs/08-runbook-stage1.md` | 明日 runbook:全量缓存 + twin 双臂(无损起跑指南) |
 | `docs/09-roadmap.md` | 长期路线图:Stage 3/4 规格、开放超参、论文定位备忘 |
+| `docs/10-poc-diag-20k.md` | POC 诊断档案:首个 20k 模型七视角定性结果、D11 停止规则、开放问题(2026-09-13) |
 | `docs/blt_research/ByteField用户立场归档.md` | 用户立场:工作定位、学术生态位、设计哲学 |
 | `reference_projects/` | 参考:BLT / Fast BLT 论文文本版、simple_point_cloud(架构模板)、MoB_Head(问题定义) |
 

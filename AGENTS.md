@@ -5,18 +5,15 @@
 
 ## 当前状态(2026-09-13)
 
-- **阶段:POC 快速迭代,集群 bltz 单臂(2026-09-13 策略变更,D10)。** 缓存
-  已全量建成(字节+token 各 14/14);**POC 阶段:看趋势+定性分析,先 bltz
-  单臂迭代,严格 baseline 缓跑**(弱参考用 gpt2/qwen/llama 同级现成模型,
-  不设对照门)。集群 burgundy.hpc.cityu.edu.hk:22,当前:**正式训练 job 544172
-  排队中**(gpu_v100s;batch 16 / fp16 / LR 4e-4 / WSD 20k ≈ 14.5h;bench
-  544090 实测 2602ms/step@23.2GB)。**home 只放源码/配置/日志/final+best
-  ckpt,数据/缓存/中间 ckpt 全走 scratch;不动其它在跑 job(mob_race 等)与
-  项目文件夹;登录节点只跑秒级只读命令。** 优雅中断机制已落地(`<ckpt_dir>\STOP`
-  文件 / Ctrl+C,即存即退,ckpt_every=250;test_interrupt.py 覆盖三路径)。
-  **里程碑快照已落地(milestone_every=2000,永久保留,weight-only 0.55GB/份,
-  WSD 稳定段分支点)**;首轮 20k 中段快照因 rotation 只留尾 2 而丢失
-  (幸存:frozen.pt@~12000)。
+- **阶段:POC 快速迭代,集群 bltz 单臂(2026-09-13 策略变更,D10)。** 首轮
+  20k 已跑完(run 544172;诊断档案 **`docs/10-poc-diag-20k.md`**——七视角
+  定性结果、LR 探针始末、D11 词界停止落地);**下一步待用户调研拍板**
+  (λ/n/头冲突调参 vs 60k 长跑,档案 §6)。缓存已全量建成(字节+token 各
+  14/14);严格 baseline 缓跑。集群 burgundy.hpc.cityu.edu.hk:22。**home
+  只放源码/配置/日志/final+best ckpt,数据/缓存/中间 ckpt 全走 scratch(配额
+  300GB);不动其它在跑 job(mob_race 等)与项目文件夹;登录节点只跑秒级
+  只读命令。** 优雅中断(`<ckpt_dir>\STOP` / Ctrl+C,即存即退,ckpt_every=250)
+  + 里程碑快照(milestone_every=2000,weight-only 0.55GB/份,WSD 分支点)。
 - **更名(2026-09-12,用户拍板)**:原名 ByteField → **bltz**
   (byte-aware learnable tokenizer,致敬 BLT)。包 `bltz/`、模型类 `BltzLM`、
   入口 `scripts/train_bltz.py`;历史报告(docs/04/05/06)与用户立场归档
