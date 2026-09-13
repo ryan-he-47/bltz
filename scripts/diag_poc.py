@@ -1,0 +1,453 @@
+"""POC qualitative diagnostic suite (docs/08 §4). NO pass/fail gates — every
+section prints descriptive measurements; judgment is left to the reader
+(D-1 verdict framework abolished 2026-09-13).
+
+Sections: gen gcos edelta enc bound demb bemb (default: all)
+Run:
+  python scripts/diag_poc.py <ckpt.pt> [section ...] [--cache data/cache_dryrun]
+"""
+from __future__ import annotations
+
+import random
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# generated text may contain arbitrary bytes; the Windows console is GBK —
+# reconfigure stdout/stderr to utf-8 with replacement instead of crashing.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+import torch.nn.functional as F
+
+from bltz.config import Cfg
+from bltz.infer import generate
+from bltz.models import BltzLM
+from bltz.objectives import mtp_targets
+from bltz.segment import Segmenter
+from bltz.shards import ShardReader
+
+DEV = "cuda"
+VIZ = Path("viz")
+CKPT = sys.argv[1]
+CACHE = "data/cache_dryrun"
+SECTIONS = ["gen", "gcos", "edelta", "enc", "bound", "demb", "bemb"]
+args = sys.argv[2:]
+if "--cache" in args:
+    i = args.index("--cache")
+    CACHE = args[i + 1]
+    del args[i : i + 2]
+todo = args or SECTIONS
+
+
+def load_model(path: str):
+    state = torch.load(path, map_location="cpu", weights_only=False)
+    mcfg = Cfg(state["cfg"])
+    model = BltzLM(mcfg)
+    model.load_state_dict(state["model"])
+    return model.to(DEV).eval(), mcfg, state
+
+
+model, mcfg, state = load_model(CKPT)
+seg = Segmenter(mcfg.segment.l_max, 0.0, 0.0)
+print(f"model: step {state['step']}, params {sum(p.numel() for p in model.parameters())/1e6:.1f}M")
+
+
+def char_class(b: int) -> str:
+    if b in (32, 9, 10, 13):
+        return "space"
+    if 48 <= b <= 57:
+        return "digit"
+    if (65 <= b <= 90) or (97 <= b <= 122):
+        return "letter"
+    if b in (46, 44, 33, 63, 59, 58, 39, 34, 45, 40, 41):
+        return "punct"
+    return "other"
+
+
+# ----------------------------------------------------------------------------
+def sec_gen() -> None:
+    """Generation samples at several theta_stop + emergent segmentation stats."""
+    prompts = [
+        "The history of artificial intelligence began",
+        "In a surprising turn of events,",
+        "The quick brown fox",
+    ]
+    for th in (0.5, 1.0, 2.0, float("inf")):
+        print(f"\n=== theta_stop={th} ===")
+        for p in prompts:
+            r = generate(model, p, seg, mcfg, max_commits=48, theta_stop=th, temperature=0.0)
+            text = r["text"].decode("utf-8", errors="replace")
+            print(f"[{p!r}] spans={r['spans'][:12]}{'...' if len(r['spans'])>12 else ''}")
+            print(f"  -> {text!r}")
+
+    # emergent segmentation: are commit boundaries word-aligned?
+    print("\n=== emergent segmentation stats (theta=1.0) ===")
+    for p in prompts[:2]:
+        r = generate(model, p, seg, mcfg, max_commits=48, theta_stop=1.0, temperature=0.0)
+        cont = bytes(r["text"])[len(p):]
+        spans = r["spans"]
+        ends = np.cumsum(spans)  # commit-end positions inside continuation
+        ends = ends[ends < len(cont)]
+        if len(ends) == 0:
+            continue
+        aligned = sum(1 for e in ends if cont[e] == 32)
+        base = sum(1 for i in range(len(cont)) if cont[i] == 32) / max(len(cont), 1)
+        print(f"  [{p[:24]!r}] commits={len(spans)} aligned@space={aligned}/{len(ends)} "
+              f"({aligned/len(ends):.2f}) base-rate={base:.2f} "
+              f"span mean={np.mean(spans):.1f} median={np.median(spans):.0f}")
+
+
+# ----------------------------------------------------------------------------
+def sec_gcos() -> None:
+    """Gradient cosine similarity between the k=1/2/3 future-patch subtasks."""
+    reader = ShardReader(CACHE)
+    S = mcfg.data.n_patches
+    n_seq = reader.n_sequences(S)
+    rng = random.Random(0)
+    n, lam, k_max = mcfg.loss.n_patches_ahead, float(mcfg.loss.lam), mcfg.model.k_max
+
+    def task_grad(batch, kv: int) -> torch.Tensor:
+        model.zero_grad(set_to_none=True)
+        B, Sq = batch["byte_ids"].shape[0], batch["byte_ids"].shape[1]
+        h = model(batch["byte_ids"], batch["pad_mask"])[:, : Sq - 1]
+        q = mtp_targets(batch, n, lam, k_max)
+        w = q["w"] * (q["k"] == kv).float()
+        b_all = torch.arange(B, device=DEV).view(B, 1, 1).expand(B, Sq - 1, k_max).reshape(-1)
+        j_all = q["j_idx"].view(1, Sq - 1, 1).expand(B, Sq - 1, k_max).reshape(-1)
+        d_all = q["delta"].view(1, 1, k_max).expand(B, Sq - 1, k_max).reshape(-1)
+        sel = (w.reshape(-1) > 0).nonzero(as_tuple=True)[0]
+        h_q = h[b_all[sel], j_all[sel]]
+        logits = model.head(h_q, d_all[sel])
+        ce = F.cross_entropy(logits.float(), q["targets"].reshape(-1)[sel], reduction="none")
+        loss = (ce * w.reshape(-1)[sel]).sum() / w.sum().clamp_min(1e-8)
+        g = torch.autograd.grad(loss, list(model.parameters()))
+        return torch.cat([x.reshape(-1).float() for x in g])
+
+    cos_acc: dict[tuple[int, int], list[float]] = {(1, 2): [], (1, 3): [], (2, 3): []}
+    for trial in range(3):
+        idx = [rng.randrange(n_seq) for _ in range(4)]
+        batch = {k: v.to(DEV) for k, v in reader.make_batch(idx, S, augment=False, p_split=0.0, p_merge=0.0, rng=rng).items()}
+        g = {kv: task_grad(batch, kv) for kv in (1, 2, 3)}
+        for a, b in cos_acc:
+            c = F.cosine_similarity(g[a], g[b], dim=0).item()
+            cos_acc[(a, b)].append(c)
+        del batch, g
+        torch.cuda.empty_cache()
+    print("\ngradient cosine between subtasks (3 batches):")
+    for (a, b), cs in cos_acc.items():
+        print(f"  k={a} vs k={b}: {np.mean(cs):+.3f} (per-batch {['%+.3f' % c for c in cs]})")
+    print("  reading: <0 = conflict, ~0 = orthogonal, >0 = aligned")
+
+
+# ----------------------------------------------------------------------------
+def sec_edelta() -> None:
+    """Per-query CE stratified by word length / char class / position-in-word."""
+    reader = ShardReader(CACHE)
+    S = mcfg.data.n_patches
+    n_seq = reader.n_sequences(S)
+    rng = random.Random(1)
+    n, lam, k_max = mcfg.loss.n_patches_ahead, float(mcfg.loss.lam), mcfg.model.k_max
+
+    all_ce: list[np.ndarray] = []
+    all_delta: list[np.ndarray] = []
+    all_meta: list[np.ndarray] = []  # (class_id, word_len, pos_in_word, next_is_space)
+    classes = ["space", "digit", "letter", "punct", "other"]
+
+    with torch.no_grad():
+        for gi in range(n_seq - 8, n_seq):
+            units = reader.sequence_units(gi, S)
+            raw = b"".join(units)
+            meta = np.zeros((len(raw), 4), dtype=np.int64)
+            wlen = np.zeros(len(raw), dtype=np.int64)
+            # word metadata: split on space
+            start = 0
+            for i in range(len(raw) + 1):
+                if i == len(raw) or raw[i] == 32:
+                    L = i - start
+                    for j in range(start, i):
+                        wlen[j] = L
+                        meta[j, 2] = 0 if j == start else (2 if j == i - 1 else 1)
+                    start = i + 1
+            for i in range(len(raw)):
+                meta[i, 0] = classes.index(char_class(raw[i]))
+                meta[i, 1] = min(wlen[i], 12)
+                meta[i, 3] = 1 if i + 1 < len(raw) and raw[i + 1] == 32 else 0
+
+            batch = {k: v.to(DEV) for k, v in reader.make_batch([gi], S, augment=False, p_split=0.0, p_merge=0.0, rng=rng).items()}
+            q = mtp_targets(batch, n, lam, k_max)
+            h = model(batch["byte_ids"], batch["pad_mask"])[:, : S - 1]
+            h0 = h[0]  # (S-1, d); B=1 here so index with j only
+            B, Sq = 1, S
+            j_all = q["j_idx"].view(1, Sq - 1, 1).expand(B, Sq - 1, k_max).reshape(-1)
+            d_all = q["delta"].view(1, 1, k_max).expand(B, Sq - 1, k_max).reshape(-1)
+            t_all = q["targets"].reshape(-1)
+            v_all = q["valid"].reshape(-1)
+            ends = batch["ends"][0, : S - 1]
+            tpos = (ends[:, None] + q["delta"].view(1, 1, k_max)[0]).reshape(-1)
+            sel = v_all.nonzero(as_tuple=True)[0]
+            for s in range(0, sel.numel(), 100000):
+                ss = sel[s : s + 100000]
+                logits = model.head(h0[j_all[ss]], d_all[ss])
+                ce = F.cross_entropy(logits.float(), t_all[ss], reduction="none")
+                pos = tpos[ss].cpu().numpy()
+                ok = pos < len(raw)
+                all_ce.append(ce.cpu().numpy()[ok])
+                all_delta.append(d_all[ss].cpu().numpy()[ok] + 1)
+                all_meta.append(meta[pos[ok]])
+
+    ce = np.concatenate(all_ce)
+    delta = np.concatenate(all_delta)
+    meta = np.concatenate(all_meta)
+    print(f"\nqueries: {len(ce)}, mean CE {ce.mean():.3f}")
+
+    def mask_wlen(lo: int, hi: int) -> np.ndarray:
+        return (meta[:, 1] >= lo) & (meta[:, 1] <= hi)
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.2))
+    ax = axes[0]
+    for lo, hi, lab in [(1, 2, "1-2"), (3, 5, "3-5"), (6, 8, "6-8"), (9, 12, "9+")]:
+        m = mask_wlen(lo, hi)
+        curve = [ce[m & (delta == d)].mean() if (m & (delta == d)).any() else np.nan for d in range(1, 17)]
+        ax.plot(range(1, 17), curve, marker=".", label=f"wordlen {lab} (n={m.sum()//1000}k)")
+    ax.set_xlabel("delta")
+    ax.set_ylabel("mean CE (nats)")
+    ax.set_title("CE vs delta, by target word length")
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3)
+
+    ax = axes[1]
+    xs = np.arange(len(classes))
+    ax.bar(xs, [ce[meta[:, 0] == i].mean() for i in xs])
+    ax.set_xticks(xs, classes)
+    ax.set_ylabel("mean CE")
+    ax.set_title("CE by target byte class")
+    ax.grid(alpha=0.3)
+
+    ax = axes[2]
+    labs = ["word-first", "word-mid", "word-last", "space-before-word"]
+    masks = [
+        (meta[:, 0] == classes.index("letter")) & (meta[:, 2] == 0),
+        (meta[:, 0] == classes.index("letter")) & (meta[:, 2] == 1),
+        (meta[:, 0] == classes.index("letter")) & (meta[:, 2] == 2),
+        (meta[:, 0] == classes.index("space")),
+    ]
+    ax.bar(np.arange(4), [ce[m].mean() for m in masks])
+    ax.set_xticks(np.arange(4), labs, rotation=15)
+    ax.set_ylabel("mean CE")
+    ax.set_title("CE by position-in-word")
+    ax.grid(alpha=0.3)
+
+    for a in axes:
+        a.tick_params(labelsize=8)
+    fig.suptitle(f"edelta: per-query CE stratification (step {state['step']})")
+    fig.tight_layout()
+    VIZ.mkdir(exist_ok=True)
+    fig.savefig(VIZ / "poc_edelta.png", dpi=150)
+    print("saved viz/poc_edelta.png")
+
+    print("\nmean CE by class:", {c: round(float(ce[meta[:, 0] == i].mean()), 3) for i, c in enumerate(classes)})
+    print("mean CE by pos-in-word:", {lab: round(float(ce[m].mean()), 3) for lab, m in zip(labs, masks)})
+    print("mean CE next-byte-is-word-end(Δ=1):",
+          round(float(ce[(delta == 1) & (meta[:, 3] == 1)].mean()), 3),
+          "vs not:", round(float(ce[(delta == 1) & (meta[:, 3] == 0)].mean()), 3))
+
+
+# ----------------------------------------------------------------------------
+def sec_enc() -> None:
+    """Encoder geometry: anisotropy, order usage, char/semantic 2x2 pairs."""
+    words = (
+        "the of and to in is was he for it with as his on be at by had not are but from or have an they which one you were her all she there would their we him been has when who will more no if out so said what up its about into than them can only other new some could time these two may then do first any my now such like our over man me even most made after also did many before must through back years where much your way well down should because each just those people mr how too little state good very make world still own see men work long get here between both life being under never day same another know while last might us great old year off come since against go came right used take three".split()
+    )
+    words = [w for w in dict.fromkeys(words) if 2 <= len(w) <= 12]
+
+    def latent(bs: bytes) -> torch.Tensor:
+        L = len(bs)
+        byte_ids = torch.tensor([list(bs)], dtype=torch.long, device=DEV).reshape(1, 1, L)
+        pad_mask = torch.zeros(1, 1, L, dtype=torch.bool, device=DEV)
+        with torch.no_grad():
+            return model.encoder(byte_ids, pad_mask)[0, 0].float()
+
+    lat = torch.stack([latent(w.encode()) for w in words])
+    lat_n = F.normalize(lat, dim=-1)
+    sim = lat_n @ lat_n.T
+    n = len(words)
+    off = sim[~torch.eye(n, dtype=bool, device=DEV)]
+    print(f"\nencoder anisotropy over {n} words: mean pairwise cos {off.mean():+.3f} "
+          f"(isotropic gaussian ~0; cone => +)")
+    X = (lat - lat.mean(0)).cpu().numpy()
+    sv = np.linalg.svd(X, compute_uv=False)
+    pr = sv.sum() ** 2 / (sv**2).sum()
+    print(f"participation ratio: {pr:.1f} / {lat.shape[1]} dims (effective dimensionality)")
+    # kNN clustering coefficient (k=5)
+    k = 5
+    knn = sim.fill_diagonal_(-2).topk(k, dim=1).indices.cpu().numpy()
+    adj = np.zeros((n, n), dtype=bool)
+    for i in range(n):
+        adj[i, knn[i]] = True
+    adj |= adj.T
+    cc = []
+    for i in range(n):
+        nb = np.nonzero(adj[i])[0]
+        if len(nb) < 2:
+            continue
+        links = adj[np.ix_(nb, nb)].sum() / 2
+        cc.append(links / (len(nb) * (len(nb) - 1) / 2))
+    print(f"kNN(k=5) clustering coefficient: {np.mean(cc):.3f} (1=cliquey, 0=tree-like)")
+
+    rng = random.Random(0)
+    cos_order = []
+    for w in words:
+        if len(w) < 4:
+            continue
+        b = list(w.encode())
+        sh = b[:]
+        rng.shuffle(sh)
+        cos_order.append(F.cosine_similarity(latent(bytes(b)), latent(bytes(sh)), dim=0).item())
+    print(f"\norder usage: cos(word, shuffled) mean {np.mean(cos_order):.3f} +- {np.std(cos_order):.3f} "
+          f"(~1 = bag-of-bytes/position-ignored; <<1 = position used)")
+
+    groups = {
+        "char-sim + sem-related": [("cat", "cats"), ("compute", "computer"), ("create", "creation"), ("music", "musical")],
+        "char-sim + sem-unrelated": [("cat", "car"), ("dog", "dot"), ("tree", "three"), ("light", "night")],
+        "char-far + sem-related": [("cat", "feline"), ("dog", "canine"), ("car", "vehicle"), ("happy", "joyful")],
+        "char-far + sem-unrelated": [("cat", "banana"), ("dog", "microscope"), ("tree", "algebra"), ("happy", "granite")],
+    }
+    print("\n2x2 pair cosines:")
+    for gname, pairs in groups.items():
+        cs = [F.cosine_similarity(latent(a.encode()), latent(b.encode()), dim=0).item() for a, b in pairs]
+        print(f"  {gname}: mean {np.mean(cs):+.3f}  {['%+.2f' % c for c in cs]}")
+
+
+# ----------------------------------------------------------------------------
+def sec_bound() -> None:
+    """Prediction distributions: word-boundary vs mid-word (autoregressive cut)."""
+    A = b"The quick brown"
+    B = b"The quick brown fo"
+    C = b"The quick brown fox"
+
+    def dist(ctx: bytes, Q: int = 8):
+        patches = [list(u) for u in seg.segment_bytes(ctx)]
+        S = len(patches)
+        l_max = mcfg.segment.l_max
+        from bltz.data import PAD_ID
+        byte_ids = torch.full((1, S, l_max), PAD_ID, dtype=torch.long)
+        pad_mask = torch.ones(1, S, l_max, dtype=torch.bool)
+        for j, pb in enumerate(patches):
+            L = min(len(pb), l_max)
+            byte_ids[0, j, :L] = torch.tensor(pb[:L], dtype=torch.long)
+            pad_mask[0, j, :L] = False
+        byte_ids, pad_mask = byte_ids.to(DEV), pad_mask.to(DEV)
+        with torch.no_grad():
+            h = model(byte_ids, pad_mask)[:, -1]
+            d = torch.arange(Q, device=DEV)
+            logits = model.head(h.expand(Q, -1), d).float()
+        logp = F.log_softmax(logits, -1)
+        p = logp.exp()
+        H = -(p * logp).sum(-1)
+        return p, H
+
+    pa, Ha = dist(A)
+    pb, Hb = dist(B)
+    pc, Hc = dist(C)
+
+    def show(name, p, H):
+        print(f"  {name}: segments={[bytes(u) for u in seg.segment_bytes(name)]}")
+        for d in range(4):
+            top = p[d].topk(5)
+            s = ", ".join(f"{repr(chr(b))}:{v:.2f}" for v, b in zip(top.values.tolist(), top.indices.tolist()))
+            print(f"    d={d+1} H={H[d]:.2f} top5: {s}")
+
+    print("\n[A] word boundary 'The quick brown':")
+    show(A, pa, Ha)
+    print("[B] mid-word 'The quick brown fo':")
+    show(B, pb, Hb)
+    print("[C] completed word 'The quick brown fox':")
+    show(C, pc, Hc)
+    kl = (pa[0] * (pa[0].log() - pb[0].log())).sum().item()
+    print(f"\n  H(d=1): A(boundary) {Ha[0]:.2f}  B(mid-word) {Hb[0]:.2f}  C(after-word) {Hc[0]:.2f}")
+    print(f"  KL(A_d1 || B_d1) = {kl:.3f} nats")
+
+
+# ----------------------------------------------------------------------------
+def sec_demb() -> None:
+    """Delta-embedding geometry (the head's learned distance field)."""
+    W = model.head.delta_emb.weight.detach().float()  # (k_max, d_delta)
+    Wn = F.normalize(W, dim=-1)
+    sim = (Wn @ Wn.T).cpu().numpy()
+    k_max = W.shape[0]
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.2))
+    im = axes[0].imshow(sim, vmin=-1, vmax=1, cmap="RdBu_r")
+    axes[0].set_title("cos(delta_emb i, j)")
+    fig.colorbar(im, ax=axes[0], fraction=0.046)
+    dists, means = [], []
+    for d in range(1, k_max):
+        vals = [sim[i, i + d] for i in range(k_max - d)]
+        dists.append(d)
+        means.append(np.mean(vals))
+    axes[1].plot(dists, means, marker=".")
+    axes[1].set_xlabel("|i - j|")
+    axes[1].set_ylabel("mean cosine")
+    axes[1].set_title("delta-emb similarity vs distance")
+    axes[1].grid(alpha=0.3)
+    fig.suptitle(f"delta embedding geometry (step {state['step']})")
+    fig.tight_layout()
+    VIZ.mkdir(exist_ok=True)
+    fig.savefig(VIZ / "poc_demb.png", dpi=150)
+    print("saved viz/poc_demb.png")
+    print(f"  adjacent cos(d,d+1) mean {np.mean([sim[i,i+1] for i in range(k_max-1)]):+.3f}; "
+          f"cos(1, k_max) {sim[0, k_max-1]:+.3f}")
+
+
+# ----------------------------------------------------------------------------
+def sec_bemb() -> None:
+    """Byte-embedding geometry (the only learned 'vocabulary')."""
+    E = model.encoder.byte_emb.weight[:256].detach().float().cpu().numpy()
+    labels = np.array([char_class(b) for b in range(256)])
+    X = E - E.mean(0)
+    u, sv, vh = np.linalg.svd(X, compute_uv=True)
+    xy = X @ vh.T[:, :2]
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    for c, color in [("letter", "tab:blue"), ("digit", "tab:orange"), ("space", "tab:green"), ("punct", "tab:red"), ("other", "gray")]:
+        m = labels == c
+        ax.scatter(xy[m, 0], xy[m, 1], s=6, alpha=0.6, label=c, c=color)
+    for b in [65, 97, 69, 101, 32, 46, 48, 57, 10]:
+        ax.annotate(repr(chr(b)), (xy[b, 0], xy[b, 1]), fontsize=9)
+    ax.legend()
+    ax.set_title(f"byte embedding PCA (step {state['step']})")
+    fig.tight_layout()
+    VIZ.mkdir(exist_ok=True)
+    fig.savefig(VIZ / "poc_bemb.png", dpi=150)
+    print("saved viz/poc_bemb.png")
+
+    En = torch.from_numpy(E)
+    En = F.normalize(En, dim=-1)
+    sim = En @ En.T
+    for b in [97, 101, 116, 65, 48, 32, 46, 10]:
+        top = sim[b].topk(9).indices.tolist()[1:9]
+        print(f"  NN of {chr(b)!r}: {[chr(t) if 32 <= t < 127 else hex(t) for t in top]}")
+
+
+# ----------------------------------------------------------------------------
+secs = {
+    "gen": sec_gen,
+    "gcos": sec_gcos,
+    "edelta": sec_edelta,
+    "enc": sec_enc,
+    "bound": sec_bound,
+    "demb": sec_demb,
+    "bemb": sec_bemb,
+}
+for name in todo:
+    print(f"\n{'='*70}\n[{name}]\n{'='*70}")
+    secs[name]()
+print("\ndiag_poc.py: DONE")

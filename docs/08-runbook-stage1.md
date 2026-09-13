@@ -91,17 +91,17 @@ Start-Process $py -ArgumentList "-u scripts\train_token_baseline.py configs\base
 
 ## 4. Step 3 — POC 诊断(看趋势+定性,不设对照门)
 
-1. **D-1(架构健康硬指标)**:
-   `& $py -u scripts\diag_delta.py checkpoints\twin\best.pt configs\default.yaml`
-   合格:per-k acc 衰减 + 逐 Δ 熵极差 > 0.05(docs/05 判据)——
-   逐 Δ 熵极差≈0 = 头忽视 Δ = 作弊签名。
+1. **POC 诊断套件**:`scripts/diag_poc.py`(生成样本+涌现分段 / 梯度任务
+   冲突 / H(Δ) 按词长与字符类分层 / 编码器几何探针 / 边界上下文分布 /
+   Δ 与字节嵌入几何;全部定性描述,不设判据门槛)。**旧 D-1 判据已废止**
+   (2026-09-13 用户拍板:武断、不贴合模型特性;docs/05 留档,diag_delta.py
+   仅作原始曲线工具)。
 2. **趋势判断**:train.log 千步级 loss 形态(从头预训练 = 长缓带噪下降,
    看趋势不看逐步抖动;勿套 MoB 蒸馏经验,2026-09-13 用户指正)。
-3. **定性生成样本**:θ_stop ∈ {0.5, 1.0, 2.0, ∞} 扫描(infer.py),人读。
-4. **弱参考 sanity**:同级现成模型(gpt2/qwen/llama 级)做 BPB 锚点;
+3. **弱参考 sanity**:同级现成模型(gpt2/qwen/llama 级)做 BPB 锚点;
    **严格 BPB 对照 + FLOPs/byte 核算(D-5 协议)缓办**,随严格 baseline
    一起补(docs/01 D10)。
-5. **记录**:趋势/定性结论入实验日志(体例继承 simple_point_cloud
+4. **记录**:趋势/定性结论入实验日志(体例继承 simple_point_cloud
    EXPERIMENT_LOG:数字、曲线、失败与修复,诚实边界)。
 
 ## 5. 失败预案
