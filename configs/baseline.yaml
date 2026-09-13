@@ -37,7 +37,7 @@ train:
   ckpt_dir: checkpoints/baseline_twin
   log_every: 50
   ckpt_every: 250           # 与 default.yaml 同步:硬杀最坏损失 ~50min
-  milestone_every: 2000     # WSD 里程碑快照(同 default.yaml)
+  milestone_every: 5000     # WSD 里程碑快照(同 default.yaml,稀疏化)
   val_every: 1000
 
 build:

@@ -50,7 +50,7 @@ train:
   ckpt_dir: checkpoints/twin
   log_every: 50
   ckpt_every: 250           # ~50min autosave(硬杀/断电最坏损失); 优雅中断走 STOP/SIGINT 即存即退
-  milestone_every: 2000     # WSD decay-on-demand 里程碑快照(永久保留,不轮替; scratch 上每份 ~1.7GB)
+  milestone_every: 5000     # WSD decay-on-demand 里程碑快照(用户拍板稀疏化 2026-09-13;永久保留,weight-only ~0.55GB/份)
   val_every: 1000
 
 infer:
