@@ -109,6 +109,10 @@ def train(
         print(f"resumed from {resume} at step {start_step}", flush=True)
     ckpt_every = int(tcfg.get("ckpt_every", 1000))
     ckpt_keep = int(tcfg.get("ckpt_keep", 2))
+    # WSD decay-on-demand 里程碑:每 milestone_every 步永久保留一份全状态
+    # (0=关)。rotation 只管崩溃恢复;里程碑是实验分支点(2026-09-13 用户
+    # 指正:只留尾段两个 ckpt 等于废了 WSD 的稳定段分支能力)。
+    milestone_every = int(tcfg.get("milestone_every", 0))
 
     # ---- graceful interrupt (local runs: free the GPU on demand) ----
     # Two channels, one save-and-stop path; the check sits at loop top so CUDA
@@ -150,11 +154,12 @@ def train(
             return "STOP file"
         return None
 
-    def save_full(step: int) -> None:
+    def save_full(step: int, name: str = "ckpt_full.pt", rotate: bool = True) -> None:
         # rotate: ckpt_full.pt -> ckpt_full.pt.1 (one previous full state kept,
-        # so a post-collapse checkpoint is not the only recovery point)
-        path = os.path.join(tcfg.ckpt_dir, "ckpt_full.pt")
-        if ckpt_keep > 1 and os.path.exists(path):
+        # so a post-collapse checkpoint is not the only recovery point).
+        # milestones pass rotate=False and a step-stamped name.
+        path = os.path.join(tcfg.ckpt_dir, name)
+        if rotate and ckpt_keep > 1 and os.path.exists(path):
             bak = path + ".1"
             if os.path.exists(bak):
                 os.remove(bak)
@@ -240,6 +245,8 @@ def train(
                 })
             if ckpt_every and (step + 1) % ckpt_every == 0:
                 save_full(step)
+            if milestone_every and (step + 1) % milestone_every == 0:
+                save_full(step, name=f"ckpt_s{step + 1:07d}.pt", rotate=False)
     except KeyboardInterrupt:
         stopped = "KeyboardInterrupt(hard)"
     finally:

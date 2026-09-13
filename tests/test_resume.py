@@ -41,9 +41,11 @@ def main() -> None:
     cfg.train.ckpt_dir = str(TMP)
     cfg.train.log_every = 5
     cfg.train.ckpt_every = 5
+    cfg.train.milestone_every = 10
     h1 = train(model, lambda: batch, cfg)
     losses1 = [r["loss"] for r in h1 if "loss" in r]
     check((TMP / "ckpt_full.pt").exists(), "ckpt_full.pt not written")
+    check((TMP / "ckpt_s0000010.pt").exists(), "milestone ckpt_s0000010.pt not written")
     last1 = losses1[-1]
 
     torch.manual_seed(999)  # different init: proves the state actually loads

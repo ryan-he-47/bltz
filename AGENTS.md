@@ -14,6 +14,8 @@
   ckpt,数据/缓存/中间 ckpt 全走 scratch;不动其它在跑 job(mob_race 等)与
   项目文件夹;登录节点只跑秒级只读命令。** 优雅中断机制已落地(`<ckpt_dir>\STOP`
   文件 / Ctrl+C,即存即退,ckpt_every=250;test_interrupt.py 覆盖三路径)。
+  **里程碑快照已落地(milestone_every=2000,永久保留,WSD 稳定段分支点)**;
+  首轮 20k 中段快照因 rotation 只留尾 2 而丢失(幸存:frozen.pt@~12000)。
 - **更名(2026-09-12,用户拍板)**:原名 ByteField → **bltz**
   (byte-aware learnable tokenizer,致敬 BLT)。包 `bltz/`、模型类 `BltzLM`、
   入口 `scripts/train_bltz.py`;历史报告(docs/04/05/06)与用户立场归档
