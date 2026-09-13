@@ -1,5 +1,13 @@
 # bltz
 
+*byte-aware learnable tokenizer — a vocab-free byte-level language model:
+Set-Transformer patch encoder → causal transformer backbone → conditional
+neural-field head `(h, Δ) → byte` (multi-future-byte prediction), with
+word-boundary natural stopping at inference.* **Status: archived**
+(research concluded 2026-09-14; the architecture works at POC scale, the
+novelty niche closed — see `docs/17`). External readers: start with
+[`ARCHITECTURE.md`](ARCHITECTURE.md) (English). License: MIT.
+
 词表 free 的字节级语言模型——**学院派 LLM 与语言表征维新派之间的和事佬**:
 把分词算法打包出的 token-ish patch 用小 encoder(Set Transformer)编成向量,
 标准 transformer 骨干在向量上做自回归,条件神经场风格的查询解码头
@@ -34,8 +42,13 @@
 | `docs/15-hat-deep-dive.md` | HAT 深挖(逐行)+ Outlook 兑现审计(2026-09-14) |
 | `docs/16-dmbp-decoder-comparison.md` | DMBP 精读与解码范式对比(bltz/HAT/DMBP,2026-09-14) |
 | `docs/17-archive-closure.md` | 项目封存说明:结论、资产索引、遗留事项(2026-09-14) |
+| `docs/18-retrospective.md` | 设计回顾与封存说明(技术版):动机/实测/方法学教训/残余问题 |
+| `docs/19-60k-wrapup-guide.md` | 60k 长 run 收尾手册(待通知后执行:曲线分析+诊断+轨迹+清理) |
 | `docs/blt_research/ByteField用户立场归档.md` | 用户立场:工作定位、学术生态位、设计哲学 |
 | `reference_projects/` | 参考:BLT / Fast BLT / HAT / DMBP 论文文本版、simple_point_cloud(架构模板)、MoB_Head(问题定义) |
 
 参考论文:Pagnoni et al., *Byte Latent Transformer* (arXiv:2412.09871);
 Kallini et al., *Fast Byte Latent Transformer* (arXiv:2605.08044)。
+
+注:`docs/` 技术文档为中文;`ARCHITECTURE.md` 为英文入口。
+代码以 MIT 协议开源(见 `LICENSE`)。
