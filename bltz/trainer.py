@@ -97,15 +97,20 @@ def train(
         # model/optimizer states are placed on the model's device by load_state_dict.
         state = torch.load(resume, map_location="cpu", weights_only=False)
         model.load_state_dict(state["model"])
-        opt.load_state_dict(state["opt"])
         start_step = int(state["step"]) + 1
-        med_hist = deque(state.get("med_hist", []), maxlen=1000)
-        best = float(state.get("best", "inf"))
-        skips = int(state.get("skips", 0))
-        torch.set_rng_state(state["rng_cpu"])
-        torch.cuda.set_rng_state(state["rng_cuda"])
-        if not use_bf16 and "scaler" in state:
-            scaler.load_state_dict(state["scaler"])
+        if "opt" in state:
+            opt.load_state_dict(state["opt"])
+            med_hist = deque(state.get("med_hist", []), maxlen=1000)
+            best = float(state.get("best", "inf"))
+            skips = int(state.get("skips", 0))
+            torch.set_rng_state(state["rng_cpu"])
+            torch.cuda.set_rng_state(state["rng_cuda"])
+            if not use_bf16 and "scaler" in state:
+                scaler.load_state_dict(state["scaler"])
+        else:
+            # weight-only milestone: fresh optimizer/scaler/RNG (house rule:
+            # branch restart peak LR must not exceed the parent run's end LR)
+            print("note: weight-only resume (milestone), optimizer reset", flush=True)
         print(f"resumed from {resume} at step {start_step}", flush=True)
     ckpt_every = int(tcfg.get("ckpt_every", 1000))
     ckpt_keep = int(tcfg.get("ckpt_keep", 2))
@@ -154,31 +159,34 @@ def train(
             return "STOP file"
         return None
 
-    def save_full(step: int, name: str = "ckpt_full.pt", rotate: bool = True) -> None:
+    def save_full(
+        step: int, name: str = "ckpt_full.pt", rotate: bool = True, state_only: bool = False
+    ) -> None:
         # rotate: ckpt_full.pt -> ckpt_full.pt.1 (one previous full state kept,
         # so a post-collapse checkpoint is not the only recovery point).
-        # milestones pass rotate=False and a step-stamped name.
+        # milestones pass rotate=False + state_only=True (weight-only: 0.55GB
+        # vs 1.7GB full — 2026-09-13 scratch quota is 300GB; a branch fork
+        # restarts the optimizer anyway, exact-state recovery uses rotation).
         path = os.path.join(tcfg.ckpt_dir, name)
         if rotate and ckpt_keep > 1 and os.path.exists(path):
             bak = path + ".1"
             if os.path.exists(bak):
                 os.remove(bak)
             os.replace(path, bak)
-        torch.save(
-            {
-                "model": model.state_dict(),
-                "opt": opt.state_dict(),
-                "step": step,
-                "med_hist": list(med_hist),
-                "best": best,
-                "skips": skips,
-                "rng_cpu": torch.get_rng_state(),
-                "rng_cuda": torch.cuda.get_rng_state(),
-                "scaler": scaler.state_dict(),
-                "cfg": cfg.to_dict(),
-            },
-            path,
-        )
+        payload: dict[str, Any] = {"model": model.state_dict(), "cfg": cfg.to_dict(), "step": step}
+        if not state_only:
+            payload.update(
+                {
+                    "opt": opt.state_dict(),
+                    "med_hist": list(med_hist),
+                    "best": best,
+                    "skips": skips,
+                    "rng_cpu": torch.get_rng_state(),
+                    "rng_cuda": torch.cuda.get_rng_state(),
+                    "scaler": scaler.state_dict(),
+                }
+            )
+        torch.save(payload, path)
 
     def log(rec: dict[str, Any]) -> None:
         history.append(rec)
@@ -246,7 +254,7 @@ def train(
             if ckpt_every and (step + 1) % ckpt_every == 0:
                 save_full(step)
             if milestone_every and (step + 1) % milestone_every == 0:
-                save_full(step, name=f"ckpt_s{step + 1:07d}.pt", rotate=False)
+                save_full(step, name=f"ckpt_s{step + 1:07d}.pt", rotate=False, state_only=True)
     except KeyboardInterrupt:
         stopped = "KeyboardInterrupt(hard)"
     finally:

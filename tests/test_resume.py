@@ -60,6 +60,16 @@ def main() -> None:
     check(losses2[-1] <= losses2[0] or losses2[-1] < last1, f"no progress after resume: {losses2}")
     print(f"phase1 last {last1:.4f}@14; resumed {losses2[0]:.4f}@{steps2[0]} -> {losses2[-1]:.4f}@{steps2[-1]}")
 
+    # phase 3: weight-only milestone resume (fresh optimizer, continues steps)
+    torch.manual_seed(7)
+    model3 = BltzLM(cfg).cuda()
+    cfg.train.steps = 12
+    cfg.train.resume = str(TMP / "ckpt_s0000010.pt")
+    h3 = train(model3, lambda: batch, cfg)
+    steps3 = [r["step"] for r in h3 if "loss" in r]
+    check(steps3 and steps3[0] == 10, f"weight-only milestone resume wrong steps: {steps3}")
+    print(f"phase3 milestone resume: steps {steps3}")
+
     shutil.rmtree(TMP, ignore_errors=True)
     print("test_resume.py: ALL PASS")
 

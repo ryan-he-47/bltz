@@ -73,10 +73,12 @@ med_hist/best/skips),每 `train.ckpt_every`(默认 250)步;**优雅中断**=
 Ctrl+C 硬退仍尽力存),循环顶检测、即存即退,STOP 用后自删;中断处最多
 重复 1 步,绝不跳步。
 **里程碑 ckpt_sNNNNNNN.pt**:每 `train.milestone_every`(默认 2000)步永久
-保留(不轮替)——WSD 稳定段分支点,decay-on-demand / 探针 fork 用;
-单份 ~1.7GB 全在 scratch。(2026-09-13 用户指正:只留尾段两个等于废了
-WSD 的稳定段分支能力;首轮 20k 中段快照因此永久丢失,唯一幸存稳定段末
-快照在 scratch `lr_probe_1e3/frozen.pt`@step~12000。)
+保留(不轮替)——WSD 稳定段分支点,decay-on-demand / 探针 fork 用。
+**weight-only**(0.55GB/份;scratch 配额 300GB 倒逼,2026-09-13):fork 分支
+本来就重置优化器,精确断点恢复走 250 步 rotation 的 ckpt_full.pt(1.7GB
+全状态)。从里程碑 resume 时日志打印 "weight-only resume",peak LR 不得超
+母 run 结束 LR(house rule)。(事故记录:首轮 20k 中段快照因 rotation 只留
+尾 2 而丢失,唯一幸存稳定段末快照在 scratch `lr_probe_1e3/frozen.pt`@~12000。)
 
 **Cfg**:动态属性(load 时 setattr),LSP 报 "Cannot access attribute" 全是
 误报;`--set a.b=value` 覆盖,**浮点必须带小数点**(`1.0e-8`,否则 yaml 当字符串)。

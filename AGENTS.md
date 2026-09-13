@@ -14,8 +14,9 @@
   ckpt,数据/缓存/中间 ckpt 全走 scratch;不动其它在跑 job(mob_race 等)与
   项目文件夹;登录节点只跑秒级只读命令。** 优雅中断机制已落地(`<ckpt_dir>\STOP`
   文件 / Ctrl+C,即存即退,ckpt_every=250;test_interrupt.py 覆盖三路径)。
-  **里程碑快照已落地(milestone_every=2000,永久保留,WSD 稳定段分支点)**;
-  首轮 20k 中段快照因 rotation 只留尾 2 而丢失(幸存:frozen.pt@~12000)。
+  **里程碑快照已落地(milestone_every=2000,永久保留,weight-only 0.55GB/份,
+  WSD 稳定段分支点)**;首轮 20k 中段快照因 rotation 只留尾 2 而丢失
+  (幸存:frozen.pt@~12000)。
 - **更名(2026-09-12,用户拍板)**:原名 ByteField → **bltz**
   (byte-aware learnable tokenizer,致敬 BLT)。包 `bltz/`、模型类 `BltzLM`、
   入口 `scripts/train_bltz.py`;历史报告(docs/04/05/06)与用户立场归档
@@ -63,6 +64,8 @@ bltz(byte-aware learnable tokenizer,原名 ByteField,致敬 BLT):词表 free 的
   V100 32GB(sm70,**不支持 bf16**,训练一律 fp16+GradScaler);
   **sbatch 模板必须带 `#SBATCH --exclude=gpu-v100s-06`**(该节点坏);
   登录节点只跑秒级只读命令;校园 VPN 会周期性掉线,SSH 超时=停手待命,不要探测重试。
+  **scratch 个人配额只有 300GB**(787T 是全集群,勿误判):hf_cache 已清理,
+  里程碑 weight-only 化,长 run 前算清 ckpt 预算(docs/08 §3.2)。
 - 重型训练上集群;本机 8GB 只做原型与小规模(≤124M 级)。
 
 ## 实验纪律(继承 simple_point_cloud / MoB_Head 血泪史)
