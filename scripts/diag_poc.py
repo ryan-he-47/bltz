@@ -74,31 +74,43 @@ def char_class(b: int) -> str:
 
 # ----------------------------------------------------------------------------
 def sec_gen() -> None:
-    """Generation samples at several theta_stop + emergent segmentation stats."""
+    """Generation samples: D11 space-boundary stop (fallback sweep) vs legacy
+    pure-entropy stop; emergent segmentation stats under the D11 rule."""
     prompts = [
         "The history of artificial intelligence began",
         "In a surprising turn of events,",
         "The quick brown fox",
     ]
-    for th in (0.5, 1.0, 2.0, float("inf")):
-        print(f"\n=== theta_stop={th} ===")
+    print("=== D11 rule: space-like boundary stop, entropy fallback sweep ===")
+    for fb in (float("inf"), 3.5, 2.5):
+        print(f"\n--- stop_mode=space, theta_fallback={fb} ---")
         for p in prompts:
-            r = generate(model, p, seg, mcfg, max_commits=48, theta_stop=th, temperature=0.0)
+            r = generate(model, p, seg, mcfg, max_commits=32, stop_mode="space",
+                         theta_fallback=fb, temperature=0.0)
             text = r["text"].decode("utf-8", errors="replace")
-            print(f"[{p!r}] spans={r['spans'][:12]}{'...' if len(r['spans'])>12 else ''}")
+            print(f"[{p[:30]!r}] spans={r['spans'][:12]}{'...' if len(r['spans'])>12 else ''}")
             print(f"  -> {text!r}")
 
-    # emergent segmentation: are commit boundaries word-aligned?
-    print("\n=== emergent segmentation stats (theta=1.0) ===")
+    print("\n--- legacy: stop_mode=entropy, theta_stop=1.5 (comparison) ---")
+    for p in prompts:
+        r = generate(model, p, seg, mcfg, max_commits=32, stop_mode="entropy",
+                     theta_stop=1.5, temperature=0.0)
+        text = r["text"].decode("utf-8", errors="replace")
+        print(f"[{p[:30]!r}] spans={r['spans'][:12]}{'...' if len(r['spans'])>12 else ''}")
+        print(f"  -> {text!r}")
+
+    # emergent segmentation: are commit boundaries word-aligned under D11?
+    print("\n=== emergent segmentation stats (space mode, fallback=inf) ===")
     for p in prompts[:2]:
-        r = generate(model, p, seg, mcfg, max_commits=48, theta_stop=1.0, temperature=0.0)
+        r = generate(model, p, seg, mcfg, max_commits=32, stop_mode="space",
+                     theta_fallback=float("inf"), temperature=0.0)
         cont = bytes(r["text"])[len(p):]
         spans = r["spans"]
-        ends = np.cumsum(spans)  # commit-end positions inside continuation
+        ends = np.cumsum(spans)
         ends = ends[ends < len(cont)]
         if len(ends) == 0:
             continue
-        aligned = sum(1 for e in ends if cont[e] == 32)
+        aligned = sum(1 for e in ends if e >= 1 and cont[e - 1] == 32)  # D11: span ENDS WITH the space
         base = sum(1 for i in range(len(cont)) if cont[i] == 32) / max(len(cont), 1)
         print(f"  [{p[:24]!r}] commits={len(spans)} aligned@space={aligned}/{len(ends)} "
               f"({aligned/len(ends):.2f}) base-rate={base:.2f} "

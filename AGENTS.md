@@ -41,8 +41,8 @@
 bltz(byte-aware learnable tokenizer,原名 ByteField,致敬 BLT):词表 free 的
 字节级语言模型——Set Transformer
 把变长字节 patch 聚成 latent,标准 transformer 骨干做 patch 级自回归,条件神经场风格的
-查询解码头 `(h, Δ) → byte` 做多未来字节预测(MTP),推理时以解码器自身 softmax 熵
-决定变长停止。定位:学院派 LLM 与语言表征维新派的和事佬——token LM 范式 +
+查询解码头 `(h, Δ) → byte` 做多未来字节预测(MTP),推理时在 space-like 词界
+自然停止、熵中断仅作兜底(D11,2026-09-13)。定位:学院派 LLM 与语言表征维新派的和事佬——token LM 范式 +
 字节级可学习 I/O(详见 `docs/blt_research/ByteField用户立场归档.md`)。
 
 ## 硬性规则(violations are blocking)
