@@ -13,7 +13,7 @@
 本架构能 work 的前提与 BLT 的若干研究结论相矛盾——若我们 work,那些组件的
 必要性即被证伪。
 
-**状态:管线施工与冒烟阶段。** 入口文档:
+**状态:已封存(2026-09-14,归档)**——收尾说明见 `docs/17-archive-closure.md`。入口文档:
 
 | 文档 | 内容 |
 |---|---|
@@ -27,8 +27,15 @@
 | `docs/08-runbook-stage1.md` | 明日 runbook:全量缓存 + twin 双臂(无损起跑指南) |
 | `docs/09-roadmap.md` | 长期路线图:Stage 3/4 规格、开放超参、论文定位备忘 |
 | `docs/10-poc-diag-20k.md` | POC 诊断档案:首个 20k 模型七视角定性结果、D11 停止规则、开放问题(2026-09-13) |
+| `docs/11-gcos-measure-fix.md` | gcos 测量修正施工单(T1-T5,2026-09-13) |
+| `docs/12-gcos-second-opinion.md` | gcos 负余弦:独立第二意见(整理稿) |
+| `docs/13-mtp-conflict-prior-art.md` | MTP/多视界梯度冲突先例档案(2026-09-13) |
+| `docs/14-paradigm-lineage-and-positioning.md` | 范式普查(24 模型)、并行解码谱系与学术定位裁决(2026-09-14) |
+| `docs/15-hat-deep-dive.md` | HAT 深挖(逐行)+ Outlook 兑现审计(2026-09-14) |
+| `docs/16-dmbp-decoder-comparison.md` | DMBP 精读与解码范式对比(bltz/HAT/DMBP,2026-09-14) |
+| `docs/17-archive-closure.md` | 项目封存说明:结论、资产索引、遗留事项(2026-09-14) |
 | `docs/blt_research/ByteField用户立场归档.md` | 用户立场:工作定位、学术生态位、设计哲学 |
-| `reference_projects/` | 参考:BLT / Fast BLT 论文文本版、simple_point_cloud(架构模板)、MoB_Head(问题定义) |
+| `reference_projects/` | 参考:BLT / Fast BLT / HAT / DMBP 论文文本版、simple_point_cloud(架构模板)、MoB_Head(问题定义) |
 
 参考论文:Pagnoni et al., *Byte Latent Transformer* (arXiv:2412.09871);
 Kallini et al., *Fast Byte Latent Transformer* (arXiv:2605.08044)。
