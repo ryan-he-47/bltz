@@ -17,6 +17,7 @@ model:
   enc_layers: 2
   enc_heads: 4             # 8→4(2026-09-14 用户拍板,保守效率砍)
   inducing: 8              # 16→8(同批;诱导注意力开销减半)
+  enc_grouped: true        # T1' 长度分组重打包(2026-09-14 深夜拍板;逐元等价,tests/test_enc_grouped.py 对拍)
   d_model: 768
   bb_layers: 12
   bb_heads: 12

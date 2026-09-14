@@ -24,6 +24,7 @@ class BltzLM(nn.Module):
             layers=m.enc_layers,
             inducing=m.inducing,
             d_out=m.d_model,
+            grouped=bool(m.get("enc_grouped", True)),
         )
         self.backbone = Backbone(
             d_model=m.d_model,

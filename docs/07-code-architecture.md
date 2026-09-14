@@ -89,11 +89,12 @@ Ctrl+C 硬退仍尽力存),循环顶检测、即存即退,STOP 用后自删;中�
 $env:PYTHONPATH="E:\Trash_things\char_lm"
 $py="E:\MiniConda\envs\cose2\python.exe"
 
-# 测试(10 个,全绿才算起跑线就绪)
+# 测试(11 个,全绿才算起跑线就绪)
 & $py tests\test_segment.py; & $py tests\test_model.py; & $py tests\test_cache.py
 & $py tests\test_token_lm.py; & $py tests\test_shard_train.py
 & $py tests\test_cache_builder.py; & $py tests\test_baseline_pipeline.py
 & $py tests\test_resume.py; & $py tests\test_interrupt.py; & $py tests\test_film_head.py
+& $py tests\test_enc_grouped.py
 
 # 全量缓存(明天第一步;~30GB 下载复用 hf cache,分割 ~4h / token ~1h)
 & $py -u scripts\build_cache.py configs\default.yaml
