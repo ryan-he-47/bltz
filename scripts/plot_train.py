@@ -13,6 +13,7 @@ import numpy as np
 
 LOG = sys.argv[1] if len(sys.argv) > 1 else r"C:\Users\he\AppData\Local\Temp\opencode\train_main_final.log"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "viz/main_544172.png"
+TITLE = sys.argv[3] if len(sys.argv) > 3 else "bltz training run"
 WARMUP = 1000
 ROLL = 10  # records (50-step cadence -> 500-step window)
 
@@ -62,7 +63,7 @@ ax2.set_yscale("log")
 ax2.legend(loc="upper right")
 ax2.grid(alpha=0.3)
 
-fig.suptitle("bltz main run 544172 (batch16, fp16, LR 4e-4, WSD 20k) — warmup cut")
+fig.suptitle(f"{TITLE} — warmup cut")
 fig.tight_layout()
 Path(OUT).parent.mkdir(parents=True, exist_ok=True)
 fig.savefig(OUT, dpi=150)

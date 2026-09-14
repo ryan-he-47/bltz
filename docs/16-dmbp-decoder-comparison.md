@@ -150,6 +150,52 @@
 
 ---
 
+## 5. 范式轴复核与先例核查(2026-09-14 追加)
+
+> **触发**:用户指出 §4 是按"功能覆盖轴"裁定的,遗漏了"范式/表述轴"——即以**相对字节偏移 Δ 为显式坐标的单一共享解码头**做字节级多未来预测。本节为该轴的独立核查结论,结论与 §4 不同,请一并阅读。
+
+### 5.1 核查方法
+
+arXiv 元数据检索 + arXiv 全文检索、Semantic Scholar 引用图、GitHub 代码检索;辅助人工比对已知工作全文(DMBP/MTPC/Fast BLT/ProphetNet)。局限见 §5.5。
+
+### 5.2 结论:该完整构造在字节级 LM 的 MTP 生态中未被提出/实现
+
+负结果(检索式 → 命中):
+
+| 检索 | 结果 |
+|---|---|
+| 元数据 `all:"query-conditioned decoder"` | **0** |
+| 元数据 `all:"multi-token prediction" "single head"` | **0** |
+| 全文 `"offset embedding" "multi-token prediction"` | **0** |
+| 全文 `"relative byte offset"` | **0** |
+| 全文 `"neural field language model"` | **0** |
+| 全文 `"parallel byte prediction"` | **1**(即 DMBP 自己) |
+| 全文 `"coordinate-conditioned decoder"` | 6,全为 CV/图形/PDE |
+| 全文 `"offset-conditioned"` | 7,无 LM |
+
+- DMBP 全文:`coordinate` **0** 次;`offset` 5 次(全部在批评既有 MTP 的 "fixed-offset prediction");其机制为"单头 + LCA 掩码 + 段对齐窗口",**无 Δ 输入**。
+- MTPC 全文:0 次 offset/coordinate/query/Fourier;Fast BLT:0 次 offset/coordinate(102 次 "mask",扩散)。
+
+### 5.3 最近的先例(必须正面处理)
+
+- **SeismoGPT(2606.10868v2,§3.4)——机制模式最近邻。** 逐字原文:*"the hybrid head applies a single shared MLP f_θ to z_t + e_h, where e_h is a learned per-horizon embedding, giving horizon-specific specialization at the parameter cost of one head."* 即"共享 MLP + 每 horizon 嵌入"——与 bltz 的 `concat[h, Emb(Δ)] → 共享 MLP` **属同一机制模式**;差别:(a) 离散嵌入表、非连续 Δ;(b) 地震波形 token、非字节;(c) 属对照消融研究。→ **"共享解码器按 horizon 条件化"这一模式本身不能被主张为首创。**
+- **TempField(2608.25823)——连续坐标近邻**:query-conditioned field 解码器 `D_θ(Z, φ(τ), …)`,`φ(τ)` 为**正弦 lead-time 嵌入**,支持"按需连续 lead-time 查询"——气候场,非语言。
+- **MT-GNN(2608.05132)**:"arbitrary prediction horizon, conditioned on a **Fourier encoding of the lead time**"(脑网格,非语言)。
+- LM 侧邻近机制:**Next Forcing(2606.11187)** 用 `RoPE(i+k)` 做**固定位移**的 chunk MTP;**DBLAST(2608.05448)** 用 per-position 离散分支 offset(`h_i + g_z(h_i)`),非坐标输入;**ProphetNet(2001.04063)** 共享参数的多流预测,offset 隐含在流身份中。
+- 2025 MTP 综述(2509.24435)把 MTP 分为 ProphetNet offset streams / Gloeckle 独立头 / JTP 联合头 / DeepSeek depth-chained——**0 次提到 coordinate 或 Fourier**。
+
+### 5.4 对主张的修正(可直接用于写作)
+
+- **可主张**:字节级 LM 上"**以相对字节偏移 Δ 为坐标的单一共享解码头 + 稠密多视野监督(NTP ⊂ MTP)+ 无窗口/掩码/阈值的并行发射**"。
+- **不可主张**:"共享解码器按 horizon 条件化"这一模式本身(SeismoGPT 已在邻近领域占位);把 **"neural field / coordinate-conditioned decoder" 当作新颖性标签**(该词在视觉/图形领域高度饱和,文本 LM 检索为 0,借词易被审稿人质疑)。
+- **近邻的用途(2026-09-14 定位)**:条件神经场在连续数据建模中早已成熟(图形/气候/地震/脑网格);本文的贡献是把它**迁移到字节语言**,并给出该域上的**场结构与训练动力学分析**。近邻(TempField / SeismoGPT / MT-GNN)应作为**思想渊源**正面引用,而非规避对象——迁移类贡献的举证责任是"迁过来真的 work",不是"首发机制"。
+- **一个关键升级点**:当前实现是**离散 Δ 嵌入表**(与 SeismoGPT 同类)。若要主张"连续场/坐标泛化",需把 Δ 换成连续编码(标量 Δ 的 Fourier/sinusoidal features)——这同时(a) 与 SeismoGPT 划开、(b) 让 "field" 名副其实、(c) 使偏移外推/插值成为可测命题。
+- **仍然需要**:一个被测出来的后果——每 horizon 参数成本为 0 的账、`m_max` 在监督范围内可调的质量×吞吐曲线、稠密多视野 vs 单位移监督的同规模质量对照。**核查只排除了"别人已做",没有提供"值得做"的证据。**
+
+### 5.5 核查局限(诚实标注)
+
+OpenAlex 全程 429;Exa 语义检索限流;Google Scholar 不可达;SeismoGPT 的原始出处(记为 "Esmail et al., 2026")未能独立核实;DMBP 仅 3.5 周新,引用计数可能滞后;负结果基于 arXiv 元数据+全文检索与 S2/GitHub 检索,**不能排除术语不同的漏检**。
+
 ## 附:来源
 
 - DMBP:`reference_projects/2608.15454v2.pdf` / `.txt`(2026-09-14 提取;13 页 / 1660 行;行号 L### 即此文件)。

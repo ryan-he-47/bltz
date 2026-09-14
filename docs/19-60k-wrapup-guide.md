@@ -68,6 +68,10 @@ scp -P 22 "yihe47@burgundy.hpc.cityu.edu.hk:/gpfs1/scratch/yihe47/bltz/ckpts/twi
 
 ## 6. 集群清理(scratch 配额 300GB)
 
+> **复工注记(2026-09-14 晚)**:本节为封存语境所写。**复工后缓存
+> (`data/fineweb10b`、`data/tokengpt2`)是活资产,不删**;仅纯中间产物
+> (rotation 旧档、探针目录、里程碑的冗余份)按配额酌情清理。
+
 按 `slurm/bltz_cleanup.sbatch` 模板新起一次性 job(登录节点只读纪律,
 删除一律走 job):
 - 删 `data/fineweb10b`(63GB)与 `data/tokengpt2`(22GB)——缓存是可重建

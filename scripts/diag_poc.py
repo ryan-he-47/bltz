@@ -40,7 +40,7 @@ DEV = "cuda"
 VIZ = Path("viz")
 CKPT = sys.argv[1]
 CACHE = "data/cache_dryrun"
-SECTIONS = ["gen", "gcos", "edelta", "enc", "bound", "demb", "bemb"]
+SECTIONS = ["gen", "gcos", "gcos_ext", "edelta", "enc", "bound", "demb", "bemb"]
 args = sys.argv[2:]
 if "--cache" in args:
     i = args.index("--cache")

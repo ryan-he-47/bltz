@@ -3,9 +3,10 @@
 *byte-aware learnable tokenizer — a vocab-free byte-level language model:
 Set-Transformer patch encoder → causal transformer backbone → conditional
 neural-field head `(h, Δ) → byte` (multi-future-byte prediction), with
-word-boundary natural stopping at inference.* **Status: archived**
-(research concluded 2026-09-14; the architecture works at POC scale, the
-novelty niche closed — see `docs/17`). External readers: start with
+word-boundary natural stopping at inference.* **Status: active** (briefly
+archived then un-archived on 2026-09-14 after a paradigm-axis review —
+see `docs/17`/`docs/17b` (closure episode) and `docs/18-restart-handoff.md`
+(restart & first measurement tasks)). External readers: start with
 [`ARCHITECTURE.md`](ARCHITECTURE.md) (English). License: MIT.
 
 词表 free 的字节级语言模型——**学院派 LLM 与语言表征维新派之间的和事佬**:
@@ -21,7 +22,7 @@ novelty niche closed — see `docs/17`). External readers: start with
 本架构能 work 的前提与 BLT 的若干研究结论相矛盾——若我们 work,那些组件的
 必要性即被证伪。
 
-**状态:已封存(2026-09-14,归档)**——收尾说明见 `docs/17-archive-closure.md`。入口文档:
+**状态:已复工(2026-09-14 晚;封存期留档见 `docs/17`/`docs/17b`,复工决议见 `docs/18-restart-handoff.md`)**。入口文档:
 
 | 文档 | 内容 |
 |---|---|
@@ -41,9 +42,11 @@ novelty niche closed — see `docs/17`). External readers: start with
 | `docs/14-paradigm-lineage-and-positioning.md` | 范式普查(24 模型)、并行解码谱系与学术定位裁决(2026-09-14) |
 | `docs/15-hat-deep-dive.md` | HAT 深挖(逐行)+ Outlook 兑现审计(2026-09-14) |
 | `docs/16-dmbp-decoder-comparison.md` | DMBP 精读与解码范式对比(bltz/HAT/DMBP,2026-09-14) |
-| `docs/17-archive-closure.md` | 项目封存说明:结论、资产索引、遗留事项(2026-09-14) |
-| `docs/18-retrospective.md` | 设计回顾与封存说明(技术版):动机/实测/方法学教训/残余问题 |
-| `docs/19-60k-wrapup-guide.md` | 60k 长 run 收尾手册(待通知后执行:曲线分析+诊断+轨迹+清理) |
+| `docs/17-archive-closure.md` | 封存说明(2026-09-14 上午;**已被复工决议取代**) |
+| `docs/17b-closure-retrospective.md` | 设计回顾与封存期总结(技术版留档) |
+| `docs/18-restart-handoff.md` | **复工交接单**(2026-09-14 晚:范式轴复核、新主张口径、第一批任务 M1-M5) |
+| `docs/19-60k-wrapup-guide.md` | 60k 长 run 收尾手册(曲线分析+诊断+轨迹+清理) |
+| `docs/20-60k-final-report.md` | **60k 终报**:曲线读数、20k→60k 诊断对照、gcos 全段轨迹(2026-09-14 晚) |
 | `docs/blt_research/ByteField用户立场归档.md` | 用户立场:工作定位、学术生态位、设计哲学 |
 | `reference_projects/` | 参考:BLT / Fast BLT / HAT / DMBP 论文文本版、simple_point_cloud(架构模板)、MoB_Head(问题定义) |
 
