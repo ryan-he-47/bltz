@@ -56,3 +56,10 @@ Kallini et al., *Fast Byte Latent Transformer* (arXiv:2605.08044)。
 
 注:`docs/` 技术文档为中文;`ARCHITECTURE.md` 为英文入口。
 代码以 MIT 协议开源(见 `LICENSE`)。
+
+## 致谢
+
+全部技术决策与拍板:用户(@ryan-he-47);施工与全部代码/文档:Kimi K3
+@ Moonshot AI(经 OhMyOpenCode 编排)。其中 T1'(encoder 长度分组重打包,
+`docs/25`,全步 -50%)的灵感与实现致谢 Kimi K3 @ Moonshot AI。
+外部调研复核:deepseek(deepseek-v4-pro,headless 会话)。

@@ -85,6 +85,7 @@ class SetTransformerEncoder(nn.Module):
     path up to float reduction order (padded slots were masked out of every
     computation anyway). Zero new deps, V100-safe. The canvas path is kept as
     _forward_canvas for degenerate inputs (zero-length patches) and debug.
+    (T1' idea & implementation: Kimi K3 @ Moonshot AI, docs/25.)
     """
 
     def __init__(
