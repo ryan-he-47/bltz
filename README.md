@@ -47,6 +47,7 @@ see `docs/17`/`docs/17b` (closure episode) and `docs/18-restart-handoff.md`
 | `docs/18-restart-handoff.md` | **复工交接单**(2026-09-14 晚:范式轴复核、新主张口径、第一批任务 M1-M5) |
 | `docs/19-60k-wrapup-guide.md` | 60k 长 run 收尾手册(曲线分析+诊断+轨迹+清理) |
 | `docs/20-60k-final-report.md` | **60k 终报**:曲线读数、20k→60k 诊断对照、gcos 全段轨迹(2026-09-14 晚) |
+| `docs/21-parameter-inventory.md` | 参数盘点与精调候选(精确解剖 + 旋钮清单;M5 废止记录) |
 | `docs/blt_research/ByteField用户立场归档.md` | 用户立场:工作定位、学术生态位、设计哲学 |
 | `reference_projects/` | 参考:BLT / Fast BLT / HAT / DMBP 论文文本版、simple_point_cloud(架构模板)、MoB_Head(问题定义) |
 
