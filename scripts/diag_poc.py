@@ -103,22 +103,32 @@ def _masked_task_loss(h: torch.Tensor, q: dict, w: torch.Tensor) -> torch.Tensor
 
 
 # module groups in model.parameters() registration order (encoder, backbone,
-# head{delta_emb, mlp, out}) — used to slice ONE full-param grad call per task
-# into per-module vectors (19 separate autograd traversals was far too slow).
-_PARAM_GROUPS = ["encoder", "backbone", "head.delta_emb", "head.mlp", "head.out"]
-
-
-def _group_offsets(params: list) -> dict[str, tuple[int, int]]:
+# head partition adapts to head_type: concat = delta_emb/mlp/out;
+# film = delta_emb/body(in_proj+films+rest)/out — contiguous either way).
+# Used to slice ONE full-param grad call per task into per-module vectors.
+def _param_groups() -> list:
     groups = [
         ("encoder", list(model.encoder.parameters())),
         ("backbone", list(model.backbone.parameters())),
         ("head.delta_emb", list(model.head.delta_emb.parameters())),
-        ("head.mlp", list(model.head.mlp.parameters())),
-        ("head.out", list(model.head.out.parameters())),
     ]
+    if hasattr(model.head, "mlp"):
+        groups.append(("head.mlp", list(model.head.mlp.parameters())))
+    else:
+        groups.append(("head.body", list(model.head.in_proj.parameters())
+                       + list(model.head.films.parameters()) + list(model.head.rest.parameters())))
+    groups.append(("head.out", list(model.head.out.parameters())))
+    return groups
+
+
+def _group_names() -> list:
+    return [n for n, _ in _param_groups()]
+
+
+def _group_offsets(params: list) -> dict[str, tuple[int, int]]:
     offs: dict[str, tuple[int, int]] = {}
     acc = 0
-    for name, ps in groups:
+    for name, ps in _param_groups():
         n = sum(p.numel() for p in ps)
         offs[name] = (acc, acc + n)
         acc += n
@@ -140,7 +150,7 @@ def _gcos_point(reader, mcfg, n_batches: int, seed: int, randomize: bool) -> dic
     out: dict[str, list] = {
         f"h_cos{a}{b}": [] for a, b in _GCOS_PAIRS
     }
-    for gname in _PARAM_GROUPS:
+    for gname in _group_names():
         for a, b in _GCOS_PAIRS:
             out[f"mod:{gname}:{a}{b}"] = []
     for kv in (1, 2, 3):
@@ -185,7 +195,7 @@ def _gcos_point(reader, mcfg, n_batches: int, seed: int, randomize: bool) -> dic
         for kv in (1, 2, 3):
             g = torch.autograd.grad(loss_k[kv], params, retain_graph=True)
             g_k_full[kv] = torch.cat([x.reshape(-1).float() for x in g])
-        for gname in _PARAM_GROUPS:
+        for gname in _group_names():
             o0, o1 = offs[gname]
             for a, b in _GCOS_PAIRS:
                 out[f"mod:{gname}:{a}{b}"].append(
@@ -232,7 +242,7 @@ def _gcos_report(tag: str, res: dict[str, Any]) -> None:
     for a, b in _GCOS_PAIRS:
         print(f"  k{a}-k{b}: {ms(res[f'h_cos{a}{b}'])}")
     print("T2 per-module cosines:")
-    for gname in _PARAM_GROUPS:
+    for gname in _group_names():
         row = "  ".join(f"{a}{b}:{ms(res[f'mod:{gname}:{a}{b}'])}" for a, b in _GCOS_PAIRS)
         print(f"  {gname:15s} {row}")
     print("T3 combined-update alignment cos(g_combined, g_k):")
