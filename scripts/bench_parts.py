@@ -46,11 +46,18 @@ def main() -> None:
 
     byte_ids, pad_mask = batch["byte_ids"], batch["pad_mask"]
 
+    def _peak() -> float:
+        torch.cuda.synchronize()
+        return torch.cuda.max_memory_allocated() / 2**20
+
+    torch.cuda.reset_peak_memory_stats()
     with torch.autocast("cuda", dtype=torch.bfloat16):
         t_enc = _time(lambda: model.encoder(byte_ids, pad_mask))
         lat = model.encoder(byte_ids, pad_mask)
+        p_enc = _peak()
         t_bb = _time(lambda: model.backbone(lat))
         h = model.backbone(lat)[:, : S - 1]
+        p_bb = _peak()
 
         q = mtp_targets(batch, cfg.loss.n_patches_ahead, 0.5, cfg.model.k_max)
         n_valid = int(q["valid"].sum())
@@ -65,6 +72,7 @@ def main() -> None:
             return model.head(h_q, d_all[sel])
 
         t_head = _time(head_fwd)
+        p_head = _peak()
 
         def full_step():
             with torch.autocast("cuda", dtype=torch.bfloat16):
@@ -74,13 +82,18 @@ def main() -> None:
             loss.backward()
 
         t_step = _time(full_step, reps=3)
+        p_step = _peak()
 
     n_patches_step = cfg.train.batch * S
+    n_slots = cfg.train.batch * S * cfg.segment.l_max
     print(f"\nvalid queries/step: {n_valid}")
     print(f"encoder fwd : {t_enc:8.0f} ms   ({n_patches_step} patches x 16 bytes)")
     print(f"backbone fwd: {t_bb:8.0f} ms   ({n_patches_step} patch tokens)")
     print(f"head fwd    : {t_head:8.0f} ms   ({n_valid} queries)")
     print(f"full fwd+bwd: {t_step:8.0f} ms")
+    print(f"peaks MiB   : enc {p_enc:.0f} / bb {p_bb:.0f} / head {p_head:.0f} / step {p_step:.0f}")
+    print(f"byte slots  : real {int((~pad_mask).sum())} / canvas {n_slots} "
+          f"({int((~pad_mask).sum())/n_slots*100:.1f}% effective)")
     print(f"\n=> measured step time {t_step/1000:.1f}s; 20k steps = {t_step*20000/3600000:.0f} h")
     print("bench_parts.py: DONE")
 
