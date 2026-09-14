@@ -6,7 +6,9 @@ import torch.nn as nn
 
 from .backbone import Backbone
 from .encoder import SetTransformerEncoder
-from .head import ConditionalByteHead
+from .head import ConditionalByteHead, FiLMByteHead
+
+_HEADS = {"concat": ConditionalByteHead, "film": FiLMByteHead}
 
 
 class BltzLM(nn.Module):
@@ -31,7 +33,8 @@ class BltzLM(nn.Module):
             max_len=cfg.data.n_patches + 8,
             grad_ckpt=bool(m.get("grad_ckpt", False)),
         )
-        self.head = ConditionalByteHead(
+        head_cls = _HEADS[str(m.get("head_type", "concat"))]
+        self.head = head_cls(
             d_in=m.d_model,
             k_max=m.k_max,
             d_delta=m.head_delta_dim,

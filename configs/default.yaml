@@ -15,8 +15,8 @@ model:
   d_pos: 64
   d_enc: 512
   enc_layers: 2
-  enc_heads: 8
-  inducing: 16
+  enc_heads: 4             # 8→4(2026-09-14 用户拍板,保守效率砍)
+  inducing: 8              # 16→8(同批;诱导注意力开销减半)
   d_model: 768
   bb_layers: 12
   bb_heads: 12
@@ -25,6 +25,7 @@ model:
   head_delta_dim: 64
   head_hidden: 1536
   head_depth: 4
+  head_type: concat       # FiLM 实验臂:--set model.head_type=film(2026-09-14)
   k_max: 48               # = n_patches_ahead * l_max
 
 loss:

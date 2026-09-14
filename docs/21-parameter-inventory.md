@@ -50,10 +50,12 @@ delta_emb(48×64)= 3,072;MLP:Linear(832→1536)= 1,279,488
 
 | 旋钮 | 现状 → 候选 | 参数变化 | 备注 |
 |---|---|---|---|
-| inducing | 16 → 4/2 | ~0 | 强迫压缩;配合其它砍法 |
+| inducing | 16 → **8(已拍板 2026-09-14,入 default.yaml)** | ~0 | 保守砍第一批 |
+| enc_heads | 8 → **4(已拍板 2026-09-14,入 default.yaml)** | 0 | 同上;注意力模式变化 |
 | enc_layers | 2 → 1 | **-6.31M** | ≤16B patch 单层大概率够 |
 | d_enc | 512 → 384 | -3~-4M | 与层数砍可叠加 |
 | PMA → mean-pool | MAB → mean | -3.15M | D8 消融臂本来就留着 |
+| head: concat → **FiLM(A/B 实验中,docs/22)** | +0.30M | 条件化方式,非省参 |
 | byte_emb+pos_emb | 384+64 → 256+32 | ~-0.1M | 毛毛雨 |
 | head | 不动 | 0 | 参数效率最高,FLOPs 主力 |
 | backbone | 暂不动 | 0 | 与 token 基线可比性优先 |
