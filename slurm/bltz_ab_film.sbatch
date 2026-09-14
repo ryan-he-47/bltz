@@ -32,10 +32,15 @@ if [ -f "$CKPT/ckpt_full.pt" ]; then
   echo "[ab] resuming own state from $CKPT/ckpt_full.pt"
 fi
 
+# --- memory guards (2026-09-14 OOM lesson): fused FiLM head + head grad
+# checkpointing (retention bounded by chunk, not total queries — batches pack
+# by PATCH count so query count floats with byte density) + expandable segments
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
 $PY -u scripts/train_bltz.py configs/default.yaml \
   --set data.cache_dir="$SCRATCH/data/fineweb10b" \
   --set train.bf16=false --set train.batch=16 --set train.steps=20000 \
-  --set model.head_type=film \
+  --set model.head_type=film --set loss.head_grad_ckpt=true \
   --set train.ckpt_dir="$CKPT" \
   ${RESUME[@]+"${RESUME[@]}"}
 

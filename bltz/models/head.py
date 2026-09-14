@@ -65,9 +65,14 @@ class FiLMBlock(nn.Module):
         nn.init.zeros_(self.mod.bias)
 
     def forward(self, x: torch.Tensor, demb: torch.Tensor) -> torch.Tensor:
-        h = self.fc(self.norm(x))
+        # F.rms_norm (fused, fp32 reduction inside, no explicit fp32 tensor
+        # retained for backward) + fused addcmul: memory-lean FiLM.
+        # (2026-09-14 OOM lesson: the naive chain h*(1+g)+b with a python-level
+        # float() RMSNorm retained ~5GB extra autograd intermediates at
+        # ~130k queries/step and OOMed the 32GB V100.)
+        h = self.fc(F.rms_norm(x, (x.shape[-1],), self.norm.weight.to(x.dtype), self.norm.eps))
         g, b = self.mod(demb).chunk(2, dim=-1)
-        return F.silu(h * (1.0 + g) + b)
+        return F.silu(torch.addcmul(b, h, g).add(h))  # h*(1+g)+b, fewer intermediates
 
 
 class FiLMByteHead(nn.Module):

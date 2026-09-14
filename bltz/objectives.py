@@ -78,12 +78,23 @@ def mtp_loss(model, batch: dict[str, torch.Tensor], cfg) -> torch.Tensor:
     sel_all = valid.reshape(-1).nonzero(as_tuple=True)[0]
 
     chunk = int(cfg.loss.query_chunk)
+    # gradient-checkpoint the head per chunk when enabled (loss.head_grad_ckpt):
+    # batching is by PATCH count (S fixed), so the per-step query count floats
+    # with byte density (~130k avg, ~390k on dense batches). Without ckpt the
+    # head's retained autograd graph scales with TOTAL queries; with it, only
+    # with one chunk (2026-09-14 film-arm OOM lesson).
+    head_ckpt = bool(cfg.loss.get("head_grad_ckpt", False)) and model.training
     loss_sum = torch.zeros((), device=dev)
     w_sum = torch.zeros((), device=dev)
     for s in range(0, sel_all.numel(), chunk):
         sel = sel_all[s : s + chunk]
         h_q = h[b_all[sel], j_all[sel]]
-        logits = model.head(h_q, d_all[sel])
+        if head_ckpt:
+            logits = torch.utils.checkpoint.checkpoint(
+                model.head, h_q, d_all[sel], use_reentrant=False
+            )
+        else:
+            logits = model.head(h_q, d_all[sel])
         ce = F.cross_entropy(logits.float(), t_all[sel], reduction="none")
         loss_sum = loss_sum + (ce * w_all[sel]).sum()
         w_sum = w_sum + w_all[sel].sum()
