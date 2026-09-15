@@ -71,4 +71,4 @@ delta_emb(48×64)= 3,072;MLP:Linear(832→1536)= 1,279,488
 > **2026-09-15 冻结注记**:用户拍板"encoder 是字符级能力的视野核心,
 > 不建议动"——**encoder 侧旋钮(inducing 已完成 16→8、enc_heads 8→4、
 > enc_layers/d_enc/PMA/emb)全部关闭,不再提案**;FiLM 已升默认头
-> (docs/26);后续精调只在 backbone/训练配方侧讨论。
+> (docs/27);后续精调只在 backbone/训练配方侧讨论。

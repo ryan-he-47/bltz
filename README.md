@@ -48,6 +48,11 @@ see `docs/17`/`docs/17b` (closure episode) and `docs/18-restart-handoff.md`
 | `docs/19-60k-wrapup-guide.md` | 60k 长 run 收尾手册(曲线分析+诊断+轨迹+清理) |
 | `docs/20-60k-final-report.md` | **60k 终报**:曲线读数、20k→60k 诊断对照、gcos 全段轨迹(2026-09-14 晚) |
 | `docs/21-parameter-inventory.md` | 参数盘点与精调候选(精确解剖 + 旋钮清单;M5 废止记录) |
+| `docs/22-experiment-film-head.md` | FiLM 条件头实验(设计/基建/OOM 事故与修复/验收:同预算打平,默认升级见 27) |
+| `docs/23-batch-packing-survey.md` | 变长训练打包调研(BLT / HAT / DMBP + 通用技术;T1-T4 方案谱) |
+| `docs/24-t3-packing-measurement.md` | T3 打包浪费量化(画布 padding 62%;encoder 占前向 76-81%;Q2 重测教训) |
+| `docs/25-t1-encoder-unroll.md` | T1' encoder 长度分组重打包(逐元等价、零依赖;全步 -50%;灵感致谢 Kimi K3) |
+| `docs/27-boundary-2b-run.md` | 2B patch 边界探针长 run 档案(2026-09-15 拍板:encoder 冻结 + FiLM 默认) |
 | `docs/blt_research/ByteField用户立场归档.md` | 用户立场:工作定位、学术生态位、设计哲学 |
 | `reference_projects/` | 参考:BLT / Fast BLT / HAT / DMBP 论文文本版、simple_point_cloud(架构模板)、MoB_Head(问题定义) |
 
