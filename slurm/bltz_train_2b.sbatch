@@ -37,6 +37,7 @@ fi
 $PY -u scripts/train_bltz.py configs/default.yaml \
   --set data.cache_dir="$SCRATCH/data/fineweb10b" \
   --set train.bf16=false --set train.batch=16 --set train.steps=244000 \
+  --set train.decay_frac=0.84 \
   --set train.ckpt_dir="$CKPT" \
   ${RESUME[@]+"${RESUME[@]}"}
 

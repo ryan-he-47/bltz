@@ -33,3 +33,18 @@
 - `configs/default.yaml`:`head_type: film` + `loss.head_grad_ckpt: true`
   (FiLM 默认头的 batch16 显存安全配套;concat 运行显式 `--set` 关闭即可)。
 - encoder 冻结:旋钮清单(docs/21)encoder 侧全部关闭,不再提案。
+
+## 4. 中途干预记录(2026-09-16,用户诊断+拍板)
+
+- **现象**:2B run 在 36k 后 loss 停于 2.57-2.62(与 60k run 衰减起点同位;
+  60k 靠 decay 吃到 2.60→2.556,本 run 原计划 146k 才衰减)——
+  **稳定段 LR 4e-4 成为长程约束**(两次 run 一致证明"恒定慢磨、衰减兑现")。
+- **干预**(decay-on-demand,WSD 机制的正确用法):scancel 原 job(556282)
+  → `decay_frac: 0.4 → 0.84`(decay_start 39040)→ 重提交(job 560530,
+  从 ckpt_full@72250 续)。**形状选择:线性立即衰减**——余弦开头太平
+  (前 ~20k LR 几乎不降,对"现在就卡"是负作用);开方衰减需新代码,暂缓。
+- **生效验证**:resume 首行 LR = 3.42e-04(从 4.00e-04 按 t=0.162 精确下落),
+  其后按 4e-4→4e-5 线性衰减至 244k(剩余 ~171k 步)。
+- **观察协议**:看 2-4k 步内 loss 斜率是否响应;若低 LR 区(146k+)仍不兑现,
+  形状(cosine/sqrt)与数据量再议。scancel 时 ckpt 已在(step 72249),
+  损失 ≤50 步。

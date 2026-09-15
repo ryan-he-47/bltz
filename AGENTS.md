@@ -25,8 +25,16 @@
   heads4 保持);**FiLM 升默认头**(词界略优+更现代,赌后期;default.yaml
   `head_type: film` + `head_grad_ckpt: true`);**T1' 时代首波 = 2B patch
   边界探针长 run(docs/27)**:244k 步 ≈ 12.1B 字节,batch 16,~80h。
-  **当前:job 556282 运行中**(gpu_v100s-03;实测 ~0.85s/step,T1' 集群
-  收益兑现,预计 ~60h 完)。
+  **当前:job 560530 运行中**(2026-09-16 中途干预:36k 后 loss 平台,
+  判稳定段 LR 过高,decay_frac 0.4→0.84 改即时线性衰减,resume 自 72250
+  步 LR 3.42e-4 生效,docs/27 §4)。
+- **2026-09-15 GPU 节点诊断(`docs/28`)**:巡检确诊 `gpu-v100s-06` 是**驱动层整机
+  卡死**(117 个 D 状态僵尸、load 120 vs 配额 8、6 个 GPU 枚举路径全挂死),不是坏卡、
+  不是硬件死;`slurmd` 正常所以 Slurm 报 MIXED 且仍在接活,每个落到它上的 job 永久挂死。
+  **只有重启能解**;**`--exclude=gpu-v100s-06` 保留不动(用户拍板,本次未改 sbatch)**。
+  同时厘清了那条"该节点坏"的来源:MoB 时代 2026-09-04 的事故(同日 05 被
+  TRIX-DRAINER 自动 drain,06 因 slurmd 还活着而逃过)。**报障文本落项目目录外
+  (含他人账号标识,不入开源仓库)。**
 - **T1' 已落地(docs/25):encoder 长度分组重打包**——长度分组贴身画布、
   数值逐元等价(test_enc_grouped 对拍 max diff ~1e-6)、纯 torch 零新依赖,
   本机对拍**全步 -50%**、峰值 -16%;T3.3 分桶被其吸收。打包拍板史:
@@ -87,6 +95,12 @@ bltz(byte-aware learnable tokenizer,原名 ByteField,致敬 BLT):词表 free 的
 - 集群(学校超算,继承 MoB_Head 约定):入口 `burgundy.hpc.cityu.edu.hk:22`,SLURM;
   V100 32GB(sm70,**不支持 bf16**,训练一律 fp16+GradScaler);
   **sbatch 模板必须带 `#SBATCH --exclude=gpu-v100s-06`**(该节点坏);
+  **06 的真实病因已于 2026-09-15 确诊(`docs/28`):NVIDIA 驱动层整机卡死**——不是坏卡、
+  不是硬件死;`slurmd` 正常响应,所以 Slurm 报 `MIXED` 并持续接活,每个落到它上面的 job
+  都会永久挂死。**只有重启能解**,在运维重启前必须继续排除。
+  (另:`gpu-v100s-05` 自 2026-09-04 起 `DOWN+DRAIN`,反而没在现役 exclude 名单里。)
+  **起飞前体检(秒级只读)**:`sinfo -N -o '%N|%C|%O|%G|%t'`——看 `O`(负载)是否远大于
+  `A`(已分配 CPU);健康节点比值 ≤1,06 是 15×(踩坑史与探针用法见 `docs/28` §3)。
   登录节点只跑秒级只读命令;校园 VPN 会周期性掉线,SSH 超时=停手待命,不要探测重试。
   **scratch 个人配额只有 300GB**(787T 是全集群,勿误判):hf_cache 已清理,
   里程碑 weight-only 化,长 run 前算清 ckpt 预算(docs/08 §3.2)。
@@ -99,6 +113,12 @@ bltz(byte-aware learnable tokenizer,原名 ByteField,致敬 BLT):词表 free 的
   绝对位置会被解码器忽视,error 随 horizon 平坦 = 作弊签名)。
 - ~~逐 Δ 诊断硬性验收~~(**2026-09-13 用户拍板废止**:D-1 判据武断、不贴合
   模型特性;POC 诊断一律定性描述、不设通过门槛,套件见 docs/08 §4)。
+- **判 run 是否在推进,只看 `train.log` 步号,不看 `squeue`/`sacct` 状态**——挂死的
+  job 与健康长跑在作业系统里完全一样(2026-09-15 教训:某 job 报 `RUNNING` 13h 实为
+  卡死的 `python`;一个跑满 5 天 `TIMEOUT` 的 job 实为挂死 5 天;见 `docs/28` §4)。
+- **诊断坏节点有代价**:挂死会留下 `SIGKILL` 也杀不掉的 D 状态进程,**每探一次都在给
+  该节点加永久僵尸**;只在必要时探、探完 scancel。另:`timeout` 杀不掉 D 状态,所以
+  兜住挂死调用必须走"后台化 + 固定窗口回收"设计,不能靠 `timeout`(两个坑见 `docs/28` §3)。
 - 训练守卫:spike_skip = max(10×running median, 2000);Adam β2=0.95;不许擅自改。
 - LR 调度 house rule:可续训/探底 run 默认 **WSD**;weight-only 续训重启的 peak
   不得超过上一 run 的结束 LR。
