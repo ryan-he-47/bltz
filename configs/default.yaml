@@ -26,13 +26,14 @@ model:
   head_delta_dim: 64
   head_hidden: 1536
   head_depth: 4
-  head_type: concat       # FiLM 实验臂:--set model.head_type=film(2026-09-14)
+  head_type: film         # concat→film 升默认(2026-09-15 用户拍板:trade-off 值,赌后期;concat 保留为选项)
   k_max: 48               # = n_patches_ahead * l_max
 
 loss:
   n_patches_ahead: 3      # n: cover 3 future patches (D4)
   lam: 0.5                # patch-to-patch geometric decay (D4)
   query_chunk: 200000
+  head_grad_ckpt: true    # film 默认头配套(batch16 显存安全;commit 9129f40)
 
 train:
   steps: 20000

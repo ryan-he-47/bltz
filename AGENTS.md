@@ -21,6 +21,10 @@
   头参数/+9% 步时/需 grad-ckpt);**默认头保持 concat**,FiLM 留作
   head_type 选项。OOM 修复(head_grad_ckpt,21→11GB)与 gcos 动态模块分组
   (按 head_type)已入码。
+- **2026-09-15 拍板:encoder 冻结**(字符级能力视野核心,不再动;inducing8/
+  heads4 保持);**FiLM 升默认头**(词界略优+更现代,赌后期;default.yaml
+  `head_type: film` + `head_grad_ckpt: true`);**T1' 时代首波 = 2B patch
+  边界探针长 run(docs/26)**:244k 步 ≈ 12.1B 字节,batch 16,~80h。
 - **T1' 已落地(docs/25):encoder 长度分组重打包**——长度分组贴身画布、
   数值逐元等价(test_enc_grouped 对拍 max diff ~1e-6)、纯 torch 零新依赖,
   本机对拍**全步 -50%**、峰值 -16%;T3.3 分桶被其吸收。打包拍板史:
