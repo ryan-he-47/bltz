@@ -74,7 +74,8 @@ Start-Process $py -ArgumentList "-u scripts\train_token_baseline.py configs\base
 - **脚本**(`slurm/`,随仓库同步):bltz_cache.sbatch(CPU,**tiny 分区**——
   batch 分区拒绝 ≤10CPU/48G 的小 job)→ bltz_bench.sbatch(gpu_v100s,V100
   标定,`--dependency=afterok:<缓存job>`)→ bltz_train_twin.sbatch /
-  bltz_train_baseline.sbatch(均:`--exclude=gpu-v100s-06`,fp16
+  bltz_train_baseline.sbatch(均:`--exclude=gpu-v100s-06`——该节点**驱动层整机卡死**,
+  2026-09-15 确诊、未解,见 `docs/28`;fp16
   `--set train.bf16=false`,batch 16(bench 544090 实测:32 CUDA-OOM,16 =
   2602ms/step@23.2GB),5 天墙,`--signal=B:SIGTERM@60`
   时限/scancel 触发优雅保存,重提交自动 resume ckpt_full.pt)。
@@ -83,9 +84,12 @@ Start-Process $py -ArgumentList "-u scripts\train_token_baseline.py configs\base
   → 544090 通过;**正式训练 544172**(20k 完成);LR 探针 544364(空跑事故)
   /546477(涨回,docs/10 §2);清理 546991;**60k 长 run 547403**
   (gcos 修正测量判良性后,docs/10 §3.2b)。
+- **起飞前体检**(秒级只读,见 `docs/28` §5):`sinfo -N -o '%N|%C|%O|%G|%t'`——
+  看 `O`(负载)是否远大于 `A`(已分配 CPU);健康节点比值 ≤1,`gpu-v100s-06` 是 15×。
 - **监控**:`ssh -p 22 yihe47@burgundy.hpc.cityu.edu.hk "tail -20
   /gpfs1/home/yihe47/bltz/logs/<name>_<jobid>.out"`;缓存完成标记
-  `/gpfs1/scratch/yihe47/bltz/CACHE_READY`。
+  `/gpfs1/scratch/yihe47/bltz/CACHE_READY`。**判 run 在不在推进只看日志步号,不看
+  `squeue` 状态**——挂死的 job 与健康长跑在 `sacct` 里完全一样(`docs/28` §4)。
 - **注意**:HF 下载走 `HF_HOME=$SCRATCH/hf_cache`(防 home 配额);
   集群 cose2 = torch 2.5.1+cu121(fp16 路径已适配,numpy 2.4.6);
   `mob_race`(gpu-v100s-04)是用户其它在跑 job,**不许动**。
@@ -116,7 +120,9 @@ Start-Process $py -ArgumentList "-u scripts\train_token_baseline.py configs\base
   最新态已污染则用 `ckpt_full.pt.1`。降 LR 重启属新 run 决策,**问用户**。
 - **OOM**:batch 8 已标定;仍 OOM → batch 6/4 或 `--set model.grad_ckpt=true`。
 - **缓存损坏**:删坏 shard 目录重跑构建器(文件级断点)。
-- **集群**:VPN 掉线=停手待命;坏节点已排除;登录节点不跑重活。
+- **集群**:VPN 掉线=停手待命;坏节点已排除(`gpu-v100s-06` **驱动层整机卡死**、
+  2026-09-15 确诊未解,见 `docs/28`;`gpu-v100s-05` 自 2026-09-04 起 DOWN+DRAIN);
+  登录节点不跑重活。
 
 ## 6. 收尾
 
