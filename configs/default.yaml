@@ -26,7 +26,7 @@ model:
   head_delta_dim: 64
   head_hidden: 1536
   head_depth: 4
-  head_type: film         # concat→film 升默认(2026-09-15 用户拍板:trade-off 值,赌后期;concat 保留为选项)
+  head_type: film         # 常驻默认头(2026-09-15 升默认,2026-09-16 拍板定常驻;concat 保留为选项)
   k_max: 48               # = n_patches_ahead * l_max
 
 loss:
