@@ -54,6 +54,7 @@ see `docs/17`/`docs/17b` (closure episode) and `docs/18-restart-handoff.md`
 | `docs/25-t1-encoder-unroll.md` | T1' encoder 长度分组重打包(逐元等价、零依赖;全步 -50%;灵感致谢 Kimi K3) |
 | `docs/27-boundary-2b-run.md` | 2B patch 边界探针长 run 档案(2026-09-15 拍板:encoder 冻结 + FiLM 默认) |
 | `docs/28-phase-summary.md` | **阶段性总结**(长程结果分析/代码改动/上下文悬置信息/下一步建议;退火权重诊断全场最佳,2026-09-16) |
+| `docs/29-gpu-node-06-diagnosis.md` | gpu-v100s-06 诊断:驱动层整机卡死非坏卡(2026-09-15;exclude 规则维持) |
 | `docs/28-gpu-node-06-diagnosis.md` | gpu-v100s-06 诊断:驱动层整机卡死(不是坏卡);探针设计 + 集群起飞前体检(2026-09-15) |
 | `docs/blt_research/ByteField用户立场归档.md` | 用户立场:工作定位、学术生态位、设计哲学 |
 | `reference_projects/` | 参考:BLT / Fast BLT / HAT / DMBP 论文文本版、simple_point_cloud(架构模板)、MoB_Head(问题定义) |
