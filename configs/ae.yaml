@@ -1,0 +1,40 @@
+# v2 S0: byte-string autoencoder prototype (docs/32 S0). Start config: 32-256.
+data:
+  cache_dir: data/cache_dryrun
+  pool_sequences: 407        # all of dryrun
+  val_frac: 0.05             # held-out strings for exact-match/geometry
+
+seg:
+  l_max: 32
+  p_disagree: 0.5            # baked once per sequence (single-pass equivalence)
+  tok_dir: data/qwen35_tokenizer
+
+model:
+  d_byte: 192
+  d_pos: 64                  # within-patch position CONCAT (order visible)
+  enc_width: 256
+  enc_layers: 2
+  enc_heads: 4
+  inducing: 8
+  l_max: 32
+  d_emb: 32
+  d_delta: 64
+  dec_hidden: 256
+  dec_depth: 3
+  film_layers: 2
+
+train:
+  steps: 20000
+  batch: 256                 # strings per step
+  lr: 1.0e-3
+  warmup: 500
+  decay_frac: 0.3
+  final_frac: 0.1
+  betas: [0.9, 0.95]
+  wd: 0.01
+  clip: 1.0
+  bf16: true
+  seed: 1234
+  ckpt_dir: checkpoints/ae_32_256
+  log_every: 100
+  ckpt_every: 2000
