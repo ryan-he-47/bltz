@@ -41,7 +41,9 @@ PR 倒挂(对照 v1 的 35-45 经验值)。
 ## S2 — 骨干 + MDN 实现与本机冒烟
 
 - `bltz/models/`:AE 模块(Eθ/Dθ 独立可训)、MDN 头(π/μ/σ,fp32 NLL,
-  σ 下限)、骨干输入投影 48→768;`BltzLMv2` 组装,detach 边界明确。
+  σ 下限,输出层小初始化)、骨干**输入适配器**(LN→Linear(48→2048)→
+  GELU→Linear(2048→768),已拍板默认,docs/31 §2.3);`BltzLMv2` 组装,
+  detach 边界明确。
 - 推理循环:BOS → GMM 采样 → 解码到 EOS →(可选)回投影;温度 τ。
 - 本机冒烟:小配置过拟合单 batch(重建与 NLL 分别能降到接近 0)、
   采样一条生成链不崩;测试套件新增:test_ae_recon / test_mdn_head /
