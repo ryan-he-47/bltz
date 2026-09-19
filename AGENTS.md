@@ -24,11 +24,12 @@
   需要时优先字节腐化式(输入丢字节输出补全)而非 λ 高斯噪声。
   **S0 已完成(2026-09-18)**:48-256 定为 AE 基座(val EM 97.4%,网格与
   几何见 docs/32 §S0);GMM 定稿对角协方差 + 两层非线性缓冲(768→1024→
-  1024→K(1+2d));64 维组弃跑;POC 直接 60k(WSD 可早停)。**S1 烟雾缓存
-  构建中(573155);S2 代码已绿**(mdn.py/model_v2.py/objectives_v2.py/
-  train_bltz_v2.py + test_v2 过;本机冒烟 NLL 82.6→56.1);AE 全量重训
-  (bltz_ae_full.sbatch)与 60k POC(bltz_v2_60k.sbatch)待缓存就绪后提交。
-  测试 13 个全绿(新增 test_ae、test_v2)。
+  1024→K(1+2d));64 维组弃跑;POC 直接 60k(WSD 可早停)。**S1 烟雾验收
+  已过(573155;unit 均长 3.47B,直方图入 docs/32 §S1),正式构建 573322
+  运行中,AE 全量重训 573323 挂依赖接力;S2 代码已绿**(mdn.py/
+  model_v2.py/objectives_v2.py/train_bltz_v2.py + test_v2 过;本机冒烟
+  NLL 82.6→56.1);60k POC(bltz_v2_60k.sbatch)待 AE full ckpt 后提交。
+  测试 13 个全绿。**HF token 在 $SCRATCH/hf_cache/token(600,工作区禁存)**。
 - v1 全部存档不动:`boundary_2b` 主 run 暂停态(ckpt@~140749 在 scratch
   可续,是否续待 v2 首读后再议);v1 诊断数字(盆地底 2.50、k1-mix 2.173
   等)留作对照锚。
