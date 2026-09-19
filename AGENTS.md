@@ -32,6 +32,10 @@
   model_v2.py/objectives_v2.py/train_bltz_v2.py + test_v2 过;本机冒烟
   NLL 82.6→56.1)。测试 13 个全绿。
   **HF token 在 $SCRATCH/hf_cache/token(600,工作区禁存)**。
+  **AE 验收口径(2026-09-19 拍板)**:POC 起跑前三件套——几何套件/
+  频率分层 val(零次桶=真字符串级泛化)/distinct 串量曲线;烂则
+  scancel POC。**AE 补救工具箱四件入 docs/32**(去重词库/typo 簇增强/
+  合成词探针/随机切分回归待定)。
 - v1 全部存档不动:`boundary_2b` 主 run 暂停态(ckpt@~140749 在 scratch
   可续,是否续待 v2 首读后再议);v1 诊断数字(盆地底 2.50、k1-mix 2.173
   等)留作对照锚。
