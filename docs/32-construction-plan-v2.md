@@ -58,6 +58,17 @@ CoSE 低维利于预测的先例 + 48/32 的边际收益 = **48-256 定为 v2 AE
 
 ## S2 — 骨干 + MDN 实现与本机冒烟
 
+**已落地(2026-09-18,commit 待提交见 git log)**:`bltz/models/mdn.py`
+(两层非线性缓冲 + 对角 GMM,fp32 NLL,小初始化)、`bltz/models/model_v2.py`
+(冻结 AE + 宽非线性适配器 + 骨干 + MDN,BOS 可学习嵌入,λ 硬 detach)、
+`bltz/objectives_v2.py`、`scripts/train_bltz_v2.py`(复用 v1 trainer)、
+`configs/v2.yaml`(60k WSD)、`tests/test_v2.py`(形状/冻结/过拟合
+17.4→-34.2/采样链,绿)。端到端真冒烟(48-256 AE + dryrun 缓存,100 步):
+127.5M 参数(可训 123.1M),NLL 82.6→56.1 健康下行,~0.5s/step@batch4
+本机。集群 sbatch 已备:`bltz_ae_full.sbatch`(全量 AE 重训,stream 模式,
+依赖 CACHE_V2_READY)+ `bltz_v2_60k.sbatch`(依赖 AE full ckpt)。
+
+
 - `bltz/models/`:AE 模块(Eθ/Dθ 独立可训)、MDN 头(**两层非线性缓冲**
   (768→1024→SiLU→1024→SiLU→K(1+2d),2026-09-18 拍板)+ π/μ/σ fp32
   NLL、σ 下限、输出层小初始化)、骨干**输入适配器**(LN→Linear(48→2048)→

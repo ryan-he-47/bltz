@@ -105,7 +105,19 @@ def main() -> None:
     cfg = parse_cli()
     dev = "cuda"
     torch.manual_seed(int(cfg.train.seed))
-    train_pool, val_pool = build_pool(cfg)
+    stream = bool(cfg.data.get("stream", False))
+    if stream:
+        # full-cache mode: batch = units of one random sequence (no in-memory
+        # pool — the v2 cache has ~1e9 units). Val = 4 fixed random sequences.
+        reader = ShardReader(cfg.data.cache_dir)
+        n_seq = reader.n_sequences(512)
+        val_rng = random.Random(777)
+        val_pool = [u for gi in val_rng.sample(range(n_seq), 4)
+                    for u in reader.sequence_units(gi, 512)]
+        train_pool = None
+        print(f"[ae] stream mode: {n_seq} seqs, val {len(val_pool)} strings", flush=True)
+    else:
+        train_pool, val_pool = build_pool(cfg)
     model = ByteStringAE(cfg).to(dev)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"[ae] params {n_params / 1e6:.2f}M", flush=True)
@@ -123,7 +135,11 @@ def main() -> None:
     best = float("inf")
     model.train()
     for step in range(int(cfg.train.steps)):
-        ss = rng.sample(train_pool, int(cfg.train.batch))
+        if stream:
+            units = reader.sequence_units(rng.randrange(n_seq), 512)
+            ss = rng.sample(units, min(int(cfg.train.batch), len(units)))
+        else:
+            ss = rng.sample(train_pool, int(cfg.train.batch))
         byte_ids, lens, pad_mask = tensorize(ss, model.l_max, dev)
         for g in opt.param_groups:
             g["lr"] = sched(step)

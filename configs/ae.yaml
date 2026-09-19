@@ -3,6 +3,7 @@ data:
   cache_dir: data/cache_dryrun
   pool_sequences: 407        # all of dryrun
   val_frac: 0.05             # held-out strings for exact-match/geometry
+  stream: false              # true = full-cache streaming (v2 cache, no pool)
 
 seg:
   l_max: 32
