@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import random
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 import torch
@@ -47,7 +50,7 @@ def main() -> None:
     model = model.to(DEV).eval()
 
     # rebuild the same pool split as training (same seed / order)
-    sys.path.insert(0, "scripts")
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     from train_ae import build_pool, tensorize
 
     train_pool, val_pool = build_pool(cfg)
