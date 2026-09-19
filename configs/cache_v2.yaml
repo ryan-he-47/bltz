@@ -1,0 +1,11 @@
+# v2 cache build (docs/32 S1): enhanced-BPE segmented byte cache.
+data:
+  cache_dir: data/fineweb10b_v2     # overridden on cluster
+seg:
+  l_max: 32
+  p_disagree: 0.5
+  tok_dir: data/qwen35_tokenizer    # cluster: /gpfs1/scratch/yihe47/qwen35/models/Qwen3.5-2B
+build:
+  workers: 4                        # 2026-09-12 OOM lesson: not 8 under 48G
+  max_docs_per_file: 0              # smoke: 300
+  parquet_dir: ""                   # default: hf_hub_download into HF_HOME
