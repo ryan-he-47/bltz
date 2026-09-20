@@ -140,6 +140,21 @@ CoSE 低维利于预测的先例 + 48/32 的边际收益 = **48-256 定为 v2 AE
     min-σ ≈ 解码器置信(σ 即自信度代理,min-σ 免解码更便宜);重排是
     免重训的推理侧收益。生成仍受复合误差拖累;解码器自洽置信可作
     verifier(生成串 -0.63 vs 真串 ~0)。top5 解码候选含真值率 48.5%。
+  - **语义结构诊断(2026-09-20,diag_v2_semantic.py;λ 是字形空间,语义
+    只可能住在 768 维 h 里)**:
+    - **h 聚类存在且是语义/语法簇**:功能词簇(lower 纯度 0.97:
+      on/of/to/than/without/in/and/through)、句首连接词簇(However/
+      This/Moreover/Thus/To)、话题名词簇(Information/Server/deployed/
+      efficiency/code)、后缀碎片簇(olar/rons/tons/oted);对照 λ 空间
+      NMI 0.394 vs h 0.394→**0.142**(h 不太管表层字形),h 簇内归一化
+      编辑距离 0.768 vs λ 0.643(**h 簇拼写上更散——正是"语义相近拼写
+      不同"的签名**)。
+    - **高置信大错案例分两类,可用解码器置信完美分开**:(a) 真词级
+      语义邻近错误(conf≈0,如 'of our public _' → 'health'——
+      "public health" 是合理联想);(b) 碎片分量(conf≪-0.5 的
+      ' gyvBi…'——介于词间的分量均值,推理时可用 conf 阈值直接滤掉)。
+      120 案例在 `checkpoints/semantic_cases.txt`;t-SNE 在
+      `viz/h_tsne.png`。
 
   **POC 首发起死事故与根因(574046,2026-09-19)**:起跑后 loss 33.9→
   28.8 健康,~84 步起 gn 冲 Infinity(fp16)/3000+(bf16 同样复现)→
