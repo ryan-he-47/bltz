@@ -25,6 +25,13 @@ class BltzLMv2(nn.Module):
         self.ae.requires_grad_(False)  # hard gradient cut (CoSE Sec.3.3, hardened)
         self.l_max = ae.l_max
         d_emb = int(m.d_emb)
+        ae_d = int(ae.encoder.out_proj.out_features)
+        if ae_d != d_emb:
+            raise ValueError(
+                f"AE embedding dim mismatch: ckpt has d_emb={ae_d}, v2 config wants "
+                f"{d_emb} — retrain the AE with the right d_emb (573890 事故: "
+                f"ae.yaml 基础配置未从起跑组 32 改到 48)"
+            )
         self.adapter = nn.Sequential(
             nn.LayerNorm(d_emb),
             nn.Linear(d_emb, int(m.adapter_width)),

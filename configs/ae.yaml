@@ -18,7 +18,7 @@ model:
   enc_heads: 4
   inducing: 8
   l_max: 32
-  d_emb: 32
+  d_emb: 48                  # S0 网格裁决:48-256 为基座(2026-09-18 拍板)
   d_delta: 64
   dec_hidden: 256
   dec_depth: 3
@@ -36,6 +36,6 @@ train:
   clip: 1.0
   bf16: true
   seed: 1234
-  ckpt_dir: checkpoints/ae_32_256
+  ckpt_dir: checkpoints/ae_48_256
   log_every: 100
   ckpt_every: 2000

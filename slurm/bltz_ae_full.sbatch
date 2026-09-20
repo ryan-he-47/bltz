@@ -25,6 +25,7 @@ git pull --ff-only || echo "[ae_full] git pull failed, using existing checkout"
 
 $PY -u scripts/train_ae.py configs/ae.yaml \
   --set data.cache_dir="$SCRATCH/data/fineweb10b_v2" --set data.stream=true \
+  --set model.d_emb=48 \
   --set train.bf16=false --set train.steps=100000 \
   --set train.ckpt_dir="$SCRATCH/ckpts/ae_48_256_full"
 
