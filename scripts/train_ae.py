@@ -109,6 +109,25 @@ def main() -> None:
     cfg = parse_cli()
     dev = "cuda"
     torch.manual_seed(int(cfg.train.seed))
+    # typo-cluster augmentation (docs/32; p=0 -> off). Online, at batch time;
+    # val stays clean. Freq throttle: top-N strings from a quick pre-pass get
+    # p x freq_scale (common short strings should rarely be corrupted).
+    tcfg = cfg.get("typo", None)
+    typo_p = float(getattr(tcfg, "p", 0.0)) if tcfg else 0.0
+    freq_set = None
+    if typo_p > 0 and bool(getattr(tcfg, "freq_throttle", True)):
+        from collections import Counter
+
+        reader0 = ShardReader(cfg.data.cache_dir)
+        n0 = reader0.n_sequences(512)
+        cnt: Counter[bytes] = Counter()
+        for gi in random.Random(31337).sample(range(n0), min(int(getattr(tcfg, "freq_seqs", 256)), n0)):
+            cnt.update(reader0.sequence_units(gi, 512))
+        topn = int(getattr(tcfg, "freq_topk", 30000))
+        freq_set = frozenset(u for u, _ in cnt.most_common(topn))
+        print(f"[typo] freq throttle: top {len(freq_set)} strings get "
+              f"p*{float(getattr(tcfg, 'freq_scale', 0.25))}", flush=True)
+    typo_rng = random.Random(91517)
     stream = bool(cfg.data.get("stream", False))
     if stream:
         # full-cache mode: batch = units of one random sequence (no in-memory
@@ -144,6 +163,19 @@ def main() -> None:
             ss = rng.sample(units, min(int(cfg.train.batch), len(units)))
         else:
             ss = rng.sample(train_pool, int(cfg.train.batch))
+        if typo_p > 0:
+            from bltz.typo import corrupt, p_eff
+
+            ss = [
+                (c if (c := corrupt(s, typo_rng,
+                                    tuple(getattr(tcfg, "ops", (0.4, 0.2, 0.15, 0.15, 0.1))),
+                                    float(getattr(tcfg, "two_edit_p", 0.15)),
+                                    int(cfg.seg.l_max))) is not None else s)
+                if typo_rng.random() < p_eff(s, typo_p, freq_set,
+                                             float(getattr(tcfg, "freq_scale", 0.25)))
+                else s
+                for s in ss
+            ]
         byte_ids, lens, pad_mask = tensorize(ss, model.l_max, dev)
         for g in opt.param_groups:
             g["lr"] = sched(step)

@@ -10,6 +10,15 @@ seg:
   p_disagree: 0.5            # baked once per sequence (single-pass equivalence)
   tok_dir: data/qwen35_tokenizer
 
+typo:                       # 错别字簇增强(docs/32 工具箱 #2;p=0 关闭)
+  p: 0.0
+  freq_throttle: true       # top-N 高频串 p*freq_scale(常见短串少增强)
+  freq_seqs: 256
+  freq_topk: 30000
+  freq_scale: 0.25
+  two_edit_p: 0.15          # 85% 单编辑 / 15% 双编辑
+  ops: [0.40, 0.20, 0.15, 0.15, 0.10]   # 替换/删除/重复/交换/大小写
+
 model:
   d_byte: 192
   d_pos: 64                  # within-patch position CONCAT (order visible)
