@@ -1,8 +1,9 @@
 #!/bin/bash
-# v2 backbone POC (docs/32 S3, frozen arm): frozen 48-256 AE + 113M backbone
+# v2 backbone POC (docs/32 S3, frozen arm): frozen **32-256** AE + 113M backbone
 # + MDN head, 60k steps WSD (2026-09-18 拍板: skip 20k first-read; early-stop
 # anytime, milestones keep branch points). REQUIRES: CACHE_V2_READY + the AE
-# full ckpt ($SCRATCH/ckpts/ae_48_256_full/best.pt) — submit only after both.
+# full ckpt ($SCRATCH/ckpts/ae_32_256_full/best.pt) + ae_diag 验收过目 —
+# submit MANUALLY after review.
 #   sbatch slurm/bltz_v2_60k.sbatch   (重提交自动续自己的 ckpt)
 #SBATCH --job-name=bltz_v2_60k
 #SBATCH --partition=gpu_v100s
@@ -36,7 +37,8 @@ fi
 $PY -u scripts/train_bltz_v2.py configs/v2.yaml \
   --set data.cache_dir="$SCRATCH/data/fineweb10b_v2" \
   --set train.bf16=false --set train.batch=16 \
-  --set train.ae_ckpt="$SCRATCH/ckpts/ae_48_256_full/best.pt" \
+  --set model.d_emb=32 \
+  --set train.ae_ckpt="$SCRATCH/ckpts/ae_32_256_full/best.pt" \
   --set train.ckpt_dir="$CKPT" \
   ${RESUME[@]+"${RESUME[@]}"}
 
