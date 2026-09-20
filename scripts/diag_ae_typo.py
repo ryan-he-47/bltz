@@ -54,7 +54,16 @@ def load_model(path):
 
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    ckpts = [a for a in sys.argv[1:] if not a.startswith("--")]
+    ckpts = []
+    skip_next = False
+    for a in sys.argv[1:]:
+        if skip_next:
+            skip_next = False
+            continue
+        if a.startswith("--"):
+            skip_next = True
+            continue
+        ckpts.append(a)
     cache = sys.argv[sys.argv.index("--cache") + 1] if "--cache" in sys.argv else "data/fineweb_v2_local"
     reader = ShardReader(cache)
     n_seq = reader.n_sequences(512)
@@ -77,11 +86,11 @@ def main() -> None:
         # wait: batch_loss returns train-mode metrics incl. em; fine (eval tensors)
         line = f"\n### {name} (step {state['step']})\n  clean val(1024): CE {float(ce):.4f} EM {em:.4f}"
         # 2. noise curve
-        lam = encode_all(model, probe)
+        lam = encode_all(model, probe).to(DEV)
         for s in NOISE_GRID:
             torch.manual_seed(0)
             with torch.no_grad():
-                dec = [bytes(o) for o in model.decode(lam + torch.randn_like(lam).to(DEV) * s)]
+                dec = [bytes(o) for o in model.decode(lam + torch.randn_like(lam) * s)]
             ed = [lev(a, b[: model.l_max]) for a, b in zip(dec, probe)]
             ed = np.array(ed)
             wrong = ed[ed > 0]
@@ -100,7 +109,7 @@ def main() -> None:
         ls_ = F.normalize(encode_all(model, srcs), dim=-1)
         lp = F.normalize(encode_all(model, probe[:500]), dim=-1)
         cos_sv = (lv * ls_).sum(-1).numpy()
-        cos_bg = (lv @ lp.T).max(-1).numpy()
+        cos_bg = (lv @ lp.T).max(-1).values.numpy()
         line += (f"\n  typo-variant cos to SOURCE: mean {cos_sv.mean():.3f} | "
                  f"max-cos to probe background: {cos_bg.mean():.3f} | "
                  f"source-closer rate {(cos_sv > cos_bg).mean():.3f}")
