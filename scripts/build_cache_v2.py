@@ -32,7 +32,7 @@ def _process_file(args: tuple[int, str, str, int, dict[str, Any]]) -> dict[str, 
     file_idx, parquet_path, out_dir, max_docs, seg_cfg = args
     import pyarrow.parquet as pq
 
-    from bltz.segment_v2 import segment_v2
+    from bltz.segment_v2 import segment_v2_batch
     from bltz.shards import ShardWriter
 
     l_max = int(seg_cfg["l_max"])
@@ -43,20 +43,22 @@ def _process_file(args: tuple[int, str, str, int, dict[str, Any]]) -> dict[str, 
     n_docs = 0
     t0 = time.time()
     for rb in pf.iter_batches(batch_size=2000, columns=["text"]):
-        for text in rb.column("text"):
-            if max_docs and n_docs >= max_docs:
-                break
-            raw = text.as_py().encode("utf-8")
-            rng = random.Random(20260918 + file_idx * 100_000_000 + n_docs)
-            units = segment_v2(raw, rng, tok_dir, p=p, l_max=l_max)
+        texts = rb.column("text").to_pylist()
+        if max_docs and n_docs >= max_docs:
+            break
+        take = len(texts) if not max_docs else min(len(texts), max_docs - n_docs)
+        raws = [texts[i].encode("utf-8") for i in range(take)]
+        rngs = [random.Random(20260918 + file_idx * 100_000_000 + n_docs + i)
+                for i in range(take)]
+        for units in segment_v2_batch(raws, rngs, tok_dir, p=p, l_max=l_max):
             if units:
                 writer.add_document_units(units)
             n_docs += 1
-        if max_docs and n_docs >= max_docs:
-            break
-        if n_docs % 50000 < 2000:
-            print(f"  [shard-{file_idx:05d}] {n_docs} docs, "
-                  f"{writer.n_units/1e6:.0f}M units, {time.time()-t0:.0f}s", flush=True)
+        if n_docs % 5000 < 2000 or (max_docs and n_docs == max_docs):
+            rate = n_docs / max(time.time() - t0, 1e-9)
+            eta = f", ETA {(max_docs - n_docs) / rate / 60:.0f} min" if max_docs else ""
+            print(f"  [shard-{file_idx:05d}] {n_docs} docs ({rate:.0f} docs/s{eta}), "
+                  f"{writer.n_units/1e6:.1f}M units, {time.time()-t0:.0f}s", flush=True)
     meta = writer.close({
         "type": "enhanced_bpe", "p_disagree": p, "tokenizer": "Qwen3.5-2B",
         "l_max": l_max, "baked_seed": 20260918,
@@ -76,17 +78,30 @@ def main() -> None:
     workers = int(getattr(b, "workers", 4)) if b else 4
     max_docs = int(getattr(b, "max_docs_per_file", 0)) if b else 0
     parquet_dir = getattr(b, "parquet_dir", "") if b else ""
+    only_files = getattr(b, "only_files", "") if b else ""  # e.g. "0" or "0,3"
     cache_dir = cfg.data.cache_dir
     os.makedirs(cache_dir, exist_ok=True)
 
-    todo: list[int] = []
-    for i in range(N_FILES):
-        d = _shard_dir(cache_dir, i)
-        if os.path.exists(os.path.join(d, "meta.json")):
-            continue
-        if os.path.isdir(d):
-            shutil.rmtree(d)
-        todo.append(i)
+    if str(only_files).strip():  # "0" alone is a valid selection (int 0 is falsy!)
+        want = [int(x) for x in str(only_files).split(",") if x.strip()]
+        todo = []
+        for i in want:
+            d = _shard_dir(cache_dir, i)
+            if os.path.exists(os.path.join(d, "meta.json")):
+                print(f"shard-{i:05d} already complete, skip")
+                continue
+            if os.path.isdir(d):
+                shutil.rmtree(d)
+            todo.append(i)
+    else:
+        todo = []
+        for i in range(N_FILES):
+            d = _shard_dir(cache_dir, i)
+            if os.path.exists(os.path.join(d, "meta.json")):
+                continue
+            if os.path.isdir(d):
+                shutil.rmtree(d)
+            todo.append(i)
     if not todo:
         print("cache already complete (all 14 shards have meta.json); nothing to do")
         return

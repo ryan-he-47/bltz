@@ -17,6 +17,8 @@ import os
 import random
 from functools import lru_cache
 
+import numpy as np
+
 _SPACE = frozenset((9, 10, 11, 12, 13, 32))
 
 
@@ -28,19 +30,17 @@ def _byte_class(b: int) -> int:
     return 2  # symbol
 
 
+_BYTE_CLASS = np.array([_byte_class(b) for b in range(256)], dtype=np.uint8)
+
+
 def pre_boundaries(raw: bytes) -> set[int]:
-    """Run edges of the byte-class pre-tokenizer (0 and len excluded)."""
-    out: set[int] = set()
-    prev = None
-    for i, b in enumerate(raw):
-        c = _BYTE_CLASS[b]
-        if prev is not None and c != prev:
-            out.add(i)
-        prev = c
-    return out
-
-
-_BYTE_CLASS = [_byte_class(b) for b in range(256)]
+    """Run edges of the byte-class pre-tokenizer (0 and len excluded).
+    Vectorized: class lookup + diff (the pure-python per-byte loop was the
+    build's bottleneck — 2026-09-20 local-build lesson)."""
+    a = _BYTE_CLASS[np.frombuffer(raw, dtype=np.uint8)]
+    if a.shape[0] < 2:
+        return set()
+    return set((np.nonzero(a[1:] != a[:-1])[0] + 1).tolist())
 
 @lru_cache(maxsize=1)
 def _tokenizer(tok_dir: str):
@@ -56,15 +56,17 @@ def bpe_boundaries(raw: bytes, tok_dir: str) -> set[int]:
         enc = _tokenizer(tok_dir).encode(s, add_special_tokens=False)
     except Exception:
         return set()
-    # char idx -> byte idx; surrogateescape round-trips exactly
-    cum = [0]
-    acc = 0
-    for ch in s:
-        acc += len(ch.encode("utf-8", errors="surrogateescape"))
-        cum.append(acc)
+    # char idx -> byte idx; surrogateescape round-trips exactly. Vectorized:
+    # ascii -> 1B; DC80-DCFF surrogates -> 1B (original byte); else utf8 width.
+    ords = np.fromiter(map(ord, s), dtype=np.int64, count=len(s))
+    widths = np.where(ords < 0x80, 1,
+                      np.where((ords >= 0xDC80) & (ords <= 0xDCFF), 1,
+                               np.where(ords < 0x800, 2,
+                                        np.where(ords < 0x10000, 3, 4))))
+    cum = np.concatenate([[0], np.cumsum(widths)])
     out: set[int] = set()
     for start, _end in enc.offsets:
-        b = cum[start]
+        b = int(cum[start])
         if 0 < b < len(raw):
             out.add(b)
     return out
@@ -95,3 +97,53 @@ def segment_v2(
             if seg[i : i + l_max]:
                 units.append(seg[i : i + l_max])
     return units
+
+
+def segment_v2_batch(
+    raws: list[bytes],
+    rngs: list[random.Random],
+    tok_dir: str,
+    p: float = 0.5,
+    l_max: int = 32,
+) -> list[list[bytes]]:
+    """Batch variant: one Rust-side encode_batch (releases GIL, uses threads)
+    instead of per-doc encode calls. Falls back to the per-doc path on any
+    decode/encode exception (dirty UTF-8 docs)."""
+    try:
+        strs = [r.decode("utf-8", errors="surrogateescape") for r in raws]
+        encs = _tokenizer(tok_dir).encode_batch(strs, add_special_tokens=False)
+        if len(encs) != len(raws):
+            raise ValueError("encode_batch length mismatch")
+    except Exception:
+        return [segment_v2(r, rng, tok_dir, p, l_max) for r, rng in zip(raws, rngs)]
+    out: list[list[bytes]] = []
+    for raw, enc, rng in zip(raws, encs, rngs):
+        pre = pre_boundaries(raw)
+        s = raw.decode("utf-8", errors="surrogateescape")
+        ords = np.fromiter(map(ord, s), dtype=np.int64, count=len(s))
+        widths = np.where(ords < 0x80, 1,
+                          np.where((ords >= 0xDC80) & (ords <= 0xDCFF), 1,
+                                   np.where(ords < 0x800, 2,
+                                            np.where(ords < 0x10000, 3, 4))))
+        cum = np.concatenate([[0], np.cumsum(widths)])
+        bpe: set[int] = set()
+        for start, _end in enc.offsets:
+            b = int(cum[start])
+            if 0 < b < len(raw):
+                bpe.add(b)
+        cuts: list[int] = []
+        for g in sorted(pre | bpe):
+            if g in pre and g in bpe:
+                cuts.append(g)
+            elif rng.random() < p:
+                cuts.append(g)
+        units: list[bytes] = []
+        pos = 0
+        for g in cuts + [len(raw)]:
+            seg = raw[pos:g]
+            pos = g
+            for i in range(0, len(seg), l_max):
+                if seg[i : i + l_max]:
+                    units.append(seg[i : i + l_max])
+        out.append(units)
+    return out
