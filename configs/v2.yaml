@@ -13,7 +13,7 @@ model:
   grad_ckpt: false
   mdn_hidden: 1024                 # two-layer nonlinear buffer before GMM params
   n_comp: 64
-  sigma_floor: 1.0e-3
+  sigma_floor: 0.05                # MDN σ 坍缩防护(2026-09-19 拍板:表达力优先;A/B 验证 gn 峰值 176,红线 2000)
 train:
   ae_ckpt: checkpoints/ae_48_256/best.pt
   steps: 60000
