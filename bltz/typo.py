@@ -51,12 +51,20 @@ def corrupt(
     ops: tuple[float, ...] = (0.40, 0.20, 0.15, 0.15, 0.10),
     two_edit_p: float = 0.15,
     l_max: int = 32,
+    force_op: str | None = None,
 ) -> bytes | None:
-    """One typo variant of s, or None if augmentation is inapplicable/no-op."""
+    """One typo variant of s, or None if augmentation is inapplicable/no-op.
+    force_op ("sub"/"del"/"dup"/"trans"/"case") pins a single edit to that op
+    (per-op fidelity diagnostics)."""
     if len(s) < 3:
         return None
     allow = ("sub", "case") if len(s) <= 4 else ("sub", "del", "dup", "trans", "case")
     w = dict(zip(("sub", "del", "dup", "trans", "case"), ops))
+    if force_op is not None:
+        if force_op not in allow:
+            return None
+        cur = _apply(s, force_op, rng, l_max)
+        return None if cur is None or cur == s or len(cur) > l_max else cur
     cur = s
     for _ in range(1 + (rng.random() < two_edit_p)):
         cur2 = None
