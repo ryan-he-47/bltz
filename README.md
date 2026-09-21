@@ -59,6 +59,8 @@ see `docs/17`/`docs/17b` (closure episode) and `docs/18-restart-handoff.md`
 | `docs/31-design-v2-ae-mdn.md` | **v2 设计**(2026-09-17 用户裁决 H1 不成立后转向):字节串自编码器 + 梯度硬切断 + MDN/GMM 骨干 + 增强 BPE + EOS 终止符 |
 | `docs/32-construction-plan-v2.md` | v2 施工计划(AE 本机先行 → 缓存 v2 → 骨干+MDN → frozen/joint 双臂 POC;待审阅动工) |
 | `docs/33-lit-review-v2/` | v2 架构组件学术生态位调研(并行会话产物,2026-09-21) |
+| `docs/34-evaluation-protocols.md` | **评估协议清单**(七层协议×跑法×诊断目标×坑×覆盖图/缺口,2026-09-22) |
+| `docs/35-phase-summary-v2.md` | **v2 阶段性总结**(转向史/实验结论/代码变更/悬置信息;压缩上下文入口,2026-09-22) |
 | `docs/blt_research/ByteField用户立场归档.md` | 用户立场:工作定位、学术生态位、设计哲学 |
 | `reference_projects/` | 参考:BLT / Fast BLT / HAT / DMBP 论文文本版、simple_point_cloud(架构模板)、MoB_Head(问题定义) |
 

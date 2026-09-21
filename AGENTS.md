@@ -1,11 +1,26 @@
 # AGENTS.md
 
-项目长期约定。新会话先读本文件 + `docs/31-design-v2-ae-mdn.md`(v2 设计,
-当前主方向)+ `docs/32-construction-plan-v2.md`(施工计划)。历史入口:
-`docs/08-runbook-stage1.md`(v1 起跑)、`docs/01-design.md`(v1 设计)、
-`docs/28-phase-summary.md`(v1 阶段性总结)。
+项目长期约定。新会话先读本文件 + `docs/35-phase-summary-v2.md`(v2 阶段性
+总结,当前主入口)+ `docs/31-design-v2-ae-mdn.md`(v2 设计)+
+`docs/32-construction-plan-v2.md`(施工)+ `docs/34-evaluation-protocols.md`
+(评估协议清单)。历史入口:`docs/28-phase-summary.md`(v1 总结)、
+`docs/01-design.md`(v1 设计)、`docs/08-runbook-stage1.md`(v1 起跑)。
 
-## 当前状态(2026-09-17,v2 转向)
+## 当前状态(2026-09-22,v2 施工期)
+
+- **v2 方向**:重建塑形 AE + 梯度硬切断 + MDN/GMM 骨干 + 增强 BPE + EOS
+  (docs/31/32)。**当前在跑**:579081 typo-2B 计算最优长跑(50k 分叉,
+  LR 2e-4,+244140 步 ≈2.0B units,~0.79s/step ≈2.2 天,5 天墙内)。
+- **关键结论(详见 docs/35 §1)**:AE 三件套验收过(零次桶 EM 93.6%/
+  SC 0.384/distinct ~76M);POC/1B 健康(NLL -33.9 尾段仍探,零泛化间隙);
+  typo 增强按设计意图落实(AE 侧;t01=0.1 甜点),端到端增量未显形;
+  **乱码主因是读出不是能力**(单步 EM 与规模相符);**词表吸附解码**
+  (GMM 密度离散化=词级分类分布,EM 37.9%,乱码消灭,首个通顺英文)
+  已入库 `scripts/snap_decode.py`。
+- 悬置:typo×48维 双变量未解混(48-plain 解混 sbatch 已备待拍板);
+  v1 boundary_2b 主 run 暂停可续;多语言 typo 模式备录;下游任务级
+  评估未建(docs/34 §7 缺口清单)。
+- 测试 14 个全绿;**HF token 在 $SCRATCH/hf_cache/token(600,工作区禁存)**。
 
 - **2026-09-17 用户裁决:H1 不成立,v1 架构存在原理性缺陷**——条件独立
   并行解码(D1)无法表示多模态联合分布("cat/dog/dot" 问题:逐 Δ 边际
