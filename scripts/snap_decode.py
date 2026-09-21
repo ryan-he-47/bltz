@@ -127,25 +127,29 @@ def main() -> None:
           f"gmm {ed2['gmm'] / tot:.4f}", flush=True)
 
     if do_gen:
-        units = seqs[0]
-        bids, lens, pm = tensorize(units[:16], model.l_max, DEV)
-        cur = torch.cat([model.bos.expand(1, 1, -1),
-                         model.encode_units(bids.unsqueeze(0), pm.unsqueeze(0))], dim=1)
-        for tau in (0.0, 0.8):
-            outs = []
-            cur_t = cur.clone()
-            with torch.no_grad():
-                for _ in range(48):
-                    h = model.backbone(model.adapter(cur_t))[:, -1:]
-                    logit_pi, mu, sig = (t.float() for t in model.head.params(h))
-                    w = gmm_scores(logit_pi[0, 0], mu[0, 0], sig[0, 0], V, V2)
-                    j = int(w.argmax()) if tau <= 0 else int(torch.multinomial(F.softmax(w / tau, -1), 1))
-                    bs = table[j]
-                    outs.append(bs)
-                    nb, _, npm = tensorize([bs], model.l_max, DEV)
-                    cur_t = torch.cat([cur_t, model.encode_units(nb.unsqueeze(0), npm.unsqueeze(0))], dim=1)
-            print(f"\n--- gmm-snap rollout tau={tau} ---\n"
-                  + b"".join(outs).decode("utf-8", errors="replace")[:500], flush=True)
+        n_prompts = 4
+        taus = (0.0, 0.6, 0.8, 1.0, 1.2)
+        for units in seqs[:n_prompts]:
+            bids, lens, pm = tensorize(units[:16], model.l_max, DEV)
+            base = torch.cat([model.bos.expand(1, 1, -1),
+                              model.encode_units(bids.unsqueeze(0), pm.unsqueeze(0))], dim=1)
+            print(f"\n===== prompt: {b''.join(units[:16])[:80]!r} =====", flush=True)
+            for tau in taus:
+                torch.manual_seed(0)
+                outs = []
+                cur_t = base.clone()
+                with torch.no_grad():
+                    for _ in range(48):
+                        h = model.backbone(model.adapter(cur_t))[:, -1:]
+                        logit_pi, mu, sig = (t.float() for t in model.head.params(h))
+                        w = gmm_scores(logit_pi[0, 0], mu[0, 0], sig[0, 0], V, V2)
+                        j = int(w.argmax()) if tau <= 0 else int(torch.multinomial(F.softmax(w / tau, -1), 1))
+                        bs = table[j]
+                        outs.append(bs)
+                        nb, _, npm = tensorize([bs], model.l_max, DEV)
+                        cur_t = torch.cat([cur_t, model.encode_units(nb.unsqueeze(0), npm.unsqueeze(0))], dim=1)
+                print(f"--- tau={tau} ---\n"
+                      + b"".join(outs).decode("utf-8", errors="replace")[:400], flush=True)
     print("\n[snap] DONE", flush=True)
 
 
