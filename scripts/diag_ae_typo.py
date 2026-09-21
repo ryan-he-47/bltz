@@ -126,12 +126,32 @@ def main() -> None:
             f = np.mean([a == b for a, b in zip(dl, vs)])
             sn = np.mean([a == s for a, s in zip(dl, ss)])
             op_lines.append(f"{op}:fid {f:.3f}/snap {sn:.3f}(n={len(vs)})")
-        # C: real-word NN separation among val real strings
-        real = [u for u in val_units if u in vocab][:1000]
-        lam_r = F.normalize(encode_all(model, real), dim=-1)
-        sim = lam_r @ lam_r.T
-        sim.fill_diagonal_(-2)
-        nn_dist = (1 - sim.max(-1).values).numpy()
+        # C: real-word separation — FIXED protocol (2026-09-21).
+        # C1 canonical-form cohort: dedup by (strip spaces, lowercase), len>=4 —
+        # the old cohort was high-freq strings whose nearest neighbors are
+        # near-duplicate surface forms (cos~1), pinning NN distance at 0.
+        # C2 cloud margin: radius r(w) vs nearest-OTHER-word distance d(w);
+        # margin m(w)=d(w)-r(w) (want >0) and collision rate (a variant closer
+        # to another word than to its source) — the disambiguation readout.
+        def canon(u: bytes) -> bytes:
+            return u.strip(b" \t\n\r").lower()
+
+        vocab_canon = {canon(v) for v in vocab}
+        canon_words = list({canon(u) for u in val_units
+                            if len(canon(u)) >= 4 and canon(u) in vocab_canon})[:1000]
+        lam_c = F.normalize(encode_all(model, canon_words), dim=-1)
+        sim_c = lam_c @ lam_c.T
+        sim_c.fill_diagonal_(-2)
+        nn_c = (1 - sim_c.max(-1).values).numpy()
+        lam_cn = F.normalize(lam_s, dim=-1)
+        sim_w = lam_cn @ lam_cn.T
+        sim_w.fill_diagonal_(-2)
+        d_w = (1 - sim_w.max(-1).values).numpy()   # nearest-OTHER-word cos distance
+        r_w = 1 - (lam_vn := F.normalize(lam_v, dim=-1)).mul(lam_cn).sum(-1).numpy()
+        margin = d_w - r_w                         # SAME UNITS (cos distance)
+        cos_other = lam_vn @ lam_cn.T
+        cos_other.fill_diagonal_(-2)
+        collide = (cos_other.max(-1).values > (lam_vn * lam_cn).sum(-1)).float().mean().item()
         # D: calibrated noise failure modes
         lam_p = encode_all(model, probe_src)
         tiers = {}
@@ -156,8 +176,10 @@ def main() -> None:
         print(f"  σ_typo(per-dim) {sigma_typo:.4f} | cloud radius ‖Δλ‖ {radius:.3f}", flush=True)
         print(f"  typo 保留率(fid) {fid:.4f} | 吸引失败(snap 回源词) {snap:.4f}", flush=True)
         print(f"  per-op: {' | '.join(op_lines)}", flush=True)
-        print(f"  real-word NN dist: p1 {np.percentile(nn_dist, 1):.4f} "
-              f"p5 {np.percentile(nn_dist, 5):.4f} med {np.median(nn_dist):.4f}", flush=True)
+        print(f"  C1 canon NN dist: p1 {np.percentile(nn_c, 1):.4f} "
+              f"p5 {np.percentile(nn_c, 5):.4f} med {np.median(nn_c):.4f} (n={len(canon_words)})", flush=True)
+        print(f"  C2 margin(d-r): med {np.median(margin):+.4f} | frac m<0 {(margin < 0).mean():.3f} "
+              f"| collision {collide:.3f}", flush=True)
         for mult, row in tiers.items():
             print(f"  noise {mult:.1f}σ_t: exact {row['exact']:.3f} typo {row['typo']:.3f} "
                   f"far_real {row['far_real']:.3f} garbage {row['garbage']:.3f}", flush=True)
