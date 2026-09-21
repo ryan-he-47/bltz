@@ -49,6 +49,7 @@
 | 自由滚动样本 | `scripts/diag_v2.py` 生成段 | prefix 16 → 滚 64 步,τ 扫描 × distinct-n × mean conf;**样本全文在日志里(checkpoints/diag_v2_*.log),之前只给你看了残片——协议本身的产物是全样本** |
 | **生成解剖** | Temp 探针 probe_gen_autopsy | (A) 真值上下文单步 argmax EM 分位(~34%,与 GPT-2-small 级下词 top-1 同量级);(B) 滚动逐步日志(top3 候选/π/conf/真词否)——看到周期-2 吸引子(碎片词↔空格);(C) 生存曲线(真词率按步)对比 reproject on/off:**回投影有害**(软误差硬化,生存 0.25 vs 0.5-1.0) |
 | **verifier 门控滚动** | 同探针 | top-5 内取首个 conf>阈值的候选:文本骨架立刻浮现("and X the Y. SoB are Z…"),all-bad-fallback=0 → **乱码主因是读出策略,不是单步能力** |
+| **词表吸附解码(snap,2026-09-22 用户提出并验证)** | `scripts/snap_decode.py <v2> <ae> --units-pkl [--gen]` | 词表(Qwen ∪ 缓存 top-N)过编码器成嵌入矩阵;三读出对照:**gmm 密度吸附(Σ_k π_k·N(V_n;μ_k,σ_k²))EM 37.9% > 解码器 34.6% > 余弦 34.7%**(σ 投票信息真实);合法词保证消灭乱码;**首个通顺英文样本**(τ=0 "and in the 1990s. The first time…" 带吸引子;τ=0.8 "to be able to get / If you have to get an important part of");覆盖 95.6%(长/稀有 unit 未覆盖,表需扩充) |
 
 ## 5. 语义/表示协议(回答:语义结构住在哪、长什么样)
 
