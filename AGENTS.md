@@ -187,7 +187,9 @@ bltz(byte-aware learnable tokenizer,原名 ByteField,致敬 BLT):词表 free 的
 - YAML 配置 + `--set a.b=value` 覆盖;浮点覆盖必须带小数点(`1.0e-8`)。
 - git 只提交代码+文档;`data/`、`checkpoints/`、`runs/`、`viz/` gitignored。
 - 长任务:`python -u` + Start-Process detached,重定向到 checkpoints/*.log,
-  用 Get-Content -Tail 轮询。
+  用 Get-Content -Tail 轮询。**长脚本必须带心跳/进度条(2026-09-22 教训:
+  probe_snap 无心跳被杀进程——每分钟级别以上的循环必须定期打印进度
+  (速率+ETA),日志落盘 flush=True;构建/评估/批处理一律如此,无例外)。**
 
 ## 参考资源
 
