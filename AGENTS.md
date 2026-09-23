@@ -6,11 +6,12 @@
 (评估协议清单)。历史入口:`docs/28-phase-summary.md`(v1 总结)、
 `docs/01-design.md`(v1 设计)、`docs/08-runbook-stage1.md`(v1 起跑)。
 
-## 当前状态(2026-09-22,v2 施工期)
+## 当前状态(2026-09-24,v2 施工期)
 
 - **v2 方向**:重建塑形 AE + 梯度硬切断 + MDN/GMM 骨干 + 增强 BPE + EOS
-  (docs/31/32)。**当前在跑**:579081 typo-2B 计算最优长跑(50k 分叉,
-  LR 2e-4,+244140 步 ≈2.0B units,~0.79s/step ≈2.2 天,5 天墙内)。
+  (docs/31/32)。**typo-2B 计算最优长跑已完成并验收(2026-09-24)**:
+  579081,294140 步 ≈2.0B units,NLL -63.4,snap gmm EM 0.390(全场最佳,
+  >plain@1B 0.379),读出层收口,剩余瓶颈=能力深度(详表 docs/32 末节)。
 - **关键结论(详见 docs/35 §1)**:AE 三件套验收过(零次桶 EM 93.6%/
   SC 0.384/distinct ~76M);POC/1B 健康(NLL -33.9 尾段仍探,零泛化间隙);
   typo 增强按设计意图落实(AE 侧;t01=0.1 甜点),端到端增量未显形;
@@ -165,6 +166,11 @@ bltz(byte-aware learnable tokenizer,原名 ByteField,致敬 BLT):词表 free 的
   直接调用该 python)。torch 2.11 cu130,RTX 4060 Laptop 8GB(sm89,支持 bf16)。
 - **pip 用默认 PyPI 源(机器在香港,清华源约定已废止)。**
 - 集群(学校超算,继承 MoB_Head 约定):入口 `burgundy.hpc.cityu.edu.hk:22`,SLURM;
+  **SSH/SCP 必须显式带用户名 `yihe47@`**(本机 Windows 默认用户名「何」会被
+  服务器拒收,撞过;密钥认证走 `~/.ssh/id_ed25519`,注释 opencode-cose,
+  已在 yihe47 账户 authorized_keys 登记,`-o BatchMode=yes` 可直连);
+  集群 ckpt 实际根路径 `/gpfs1/scratch/yihe47/bltz/ckpts/`($SCRATCH 下
+  还有一层 `bltz/`);
   V100 32GB(sm70,**不支持 bf16**,训练一律 fp16+GradScaler);
   **sbatch 模板必须带 `#SBATCH --exclude=gpu-v100s-06`**(该节点坏);
   **06 的真实病因已于 2026-09-15 确诊(`docs/28`):NVIDIA 驱动层整机卡死**——不是坏卡、

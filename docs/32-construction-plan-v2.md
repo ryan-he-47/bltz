@@ -322,3 +322,31 @@ S3 两臂都显著劣于 v1 锚 → 架构判断复盘会,不是工程加力。
 分量内只取 μ_k、frozen 先行、S0 六组网格从 32-256 起跑。
 剩余随文档审阅确认:回投影默认开、去噪解码开关(默认关)、POC 20k 先读、
 l_max=32。
+
+## typo-2B 验收(2026-09-24,job 579081)
+
+50k 分叉 +244140 步(总 294140,~2.0B units),36.7h COMPLETED。曲线教科书
+WSD(稳定段 -59→-61 缓磨,~180k 起退火下探至 -63.41;gn 缓爬 6→10,
+skips 91/294k ≈1/2700 步,无失控)。`viz/v2_typo2b.png`。
+
+| 指标(docs/34 协议) | typo@2B | typo@60k | plain@1B |
+|---|---|---|---|
+| held-out NLL | **-62.24** | -59.3 | -33.86(32d 空间,不可比) |
+| argmax_pi EM | 0.369 | 0.342 | 0.343 |
+| conf_rerank EM | **0.372** | — | — |
+| top5 候选含真值 | 0.531 | — | 0.512 |
+| edit<=2 | 0.514-0.548 | ~0.53 | ~0.53 |
+| snap gmm EM | **0.390** | 0.365 | 0.379 |
+| snap 覆盖 | 0.956 | 0.956 | 0.956 |
+| π 健康 | H=1.98, eff 4.9/64, top1 0.42 无坍缩 | 同层 | 同层 |
+
+生成(snap 读出,多 τ):τ0.6-0.8 出完整真句("or to make a new way to
+use. The first time to use...", "the area of the 1st century ... The 18th
+century is a good"),高 τ 仍是引号/数字吸引子汤;内容依旧浅——2B 规格
+把"内容空洞"考卷的分数提高了但未及格,缺口在能力侧深度(下一档=数据
+×5 或参数档升级,待拍板)。语义结构(diag_v2_semantic):h 空间话题簇
+成立(c41/c06/c24 编程话题簇、c11 句首连接词簇、c39 功能词簇纯度 0.97),
+NMI(h,type)=0.151 < NMI(λ,type)=0.405 符合分工设计;16288 位置、120 例
+失败案例倾倒 checkpoints/semantic_cases.txt。
+诊断日志:checkpoints/diag_v2_typo2b.log / snap_decode_typo2b.log /
+diag_v2_semantic_typo2b.log;ckpt 本地副本 Temp\opencode\v2_typo2b_last.pt。

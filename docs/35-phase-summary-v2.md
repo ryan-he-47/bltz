@@ -42,9 +42,12 @@
    top-10 万)嵌入表上离散化 = **词级分类分布**;gmm 吸附 EM 37.9%
    (>解码器 +3.3pp,>余弦 +3.2pp——σ 投票有效);**乱码模式消灭,
    首个通顺英文样本**;词级温度/top-k/top-p 全部成立。
-10. **typo-2B 计算最优长跑(579081,运行中)**:50k 分叉,LR 2e-4,
-    +244140 步 ≈2.0B units,~0.79s/step ≈2.2 天——第一个计算最优规格
-    模型,检验"内容空洞是能力侧还是读出侧"。
+10. **typo-2B 计算最优长跑(579081,已完成 2026-09-23,验收 09-24)**:50k
+    分叉,+244140 步 ≈2.0B units,36.7h,WSD 退火至 -63.41(健康无失控)。
+    **验收(docs/34 协议全过,详表入 docs/32 末节)**:snap gmm EM **0.390**
+    (> plain@1B 0.379 > typo@60k 0.365),argmax 0.369/top5 0.531,π 无坍缩,
+    h 空间话题簇成立;生成 τ0.6-0.8 完整真句但内容仍浅——读出层问题已
+    收口,**剩余瓶颈=能力深度(数据/参数档位)**。
 
 ## 2. 代码架构变更(v2 新增,全部入 git)
 
@@ -65,12 +68,10 @@
 
 ## 3. 悬在上下文、未(全)落档的信息
 
-1. **集群在途**:579081 typo-2B 运行中(预计 ~2.2 天,5 天墙内);无其它
-   bltz job。**回来后验收按 docs/34 协议复测**(diag_v2 能力/π/生成 +
-   snap_decode 三读出+多 τ + diag_v2_semantic 语义簇)。
-2. **对照口径悬置**:typo vs plain 含 typo+d_emb 双变量;48-plain 解混
-   sbatch 已备(bltz_ae_full_plain48 / bltz_v2_plain48_60k),**已挂一次
-   后被用户撤回,是否再挂由用户定夺**。
+1. **集群在途**:**无 bltz job 在跑**(typo-2B 579081 已完成验收,见 §1.10);
+   48-plain 解混 sbatch 已备(bltz_ae_full_plain48 / bltz_v2_plain48_60k),
+   **已挂一次后被用户撤回,是否再挂由用户定夺**。**SSH 必须显式
+   `yihe47@`**(本机用户名「何」会被拒,AGENTS.md 已立规)。
 3. **本地工件**:Temp\opencode 下 ckpt 副本(ae32_full_best、
    ae48_typo_full_best、v2_60k_last、v2_1b_last、v2_typo60k_last、
    diag_sample.pkl、best_anneal 等 v1 旧件);`data/fineweb_v2_local`
