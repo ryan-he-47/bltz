@@ -47,6 +47,7 @@ class BltzLMv2(nn.Module):
         self.head = MDNHead(
             d_in=int(m.d_model), hidden=int(m.mdn_hidden),
             n_comp=int(m.n_comp), d_emb=d_emb, sigma_floor=float(m.sigma_floor),
+            swiglu=bool(m.get("mdn_swiglu", False)),
         )
 
     def encode_units(self, byte_ids: torch.Tensor, pad_mask: torch.Tensor) -> torch.Tensor:

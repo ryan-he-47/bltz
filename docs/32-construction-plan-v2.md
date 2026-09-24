@@ -371,3 +371,35 @@ GPT-2 124M OpenWebText 复现(27.5B tok)bpb≈0.93;BLT 1B@100B bytes
 仪器保守性(单 T 校准/表碎片化/OOV 均匀回退)贡献未知部分;
 ④ **原始(T=1)分布严重过自信**(bpb 11.6-14.4,比均匀字节还差),
 T=10 一致最优——GMM 密度离散化的校准属性,入档。
+
+## TinyStories MDN 头对照实验(2026-09-24 用户拍板设计)
+
+**动机**:GMM 输出层宽 K(1+2d)=64×97=**6208**,而两层缓冲只有 1024——
+瓶颈假说:头部宽度限制了 GMM 表达力(π/μ/σ 的 6208 维全从 1024 维挤出)。
+
+**三臂**(同一冻结 typo-AE(ae_48_256_typo_full,与 typo-2B 相同),
+同数据同预算,一次回答三个问题):
+| 臂 | 头 | 头参数量 | 回答 |
+|---|---|---|---|
+| ts_base(对照) | 768→1024→1024→6208 SiLU-MLP | 8.2M | 基准 |
+| ts_wide | 768→6208→6208→6208 SiLU-MLP | ~82M | 头宽度是否瓶颈 |
+| ts_swiglu | 768→6208→6208→6208 SwiGLU 块 | ~164M | 网络种类是否还有空间 |
+
+**数据集**:TinyStories(roneneldan/TinyStories train,4 parquet,~0.5GB 文本,
+简单语料控制变量——顺便回答"性能差是模型上限低还是数据复杂;数据够简单
+能否展现及格语言水平")。缓存走增强 BPE 同一管线(parquet 重命名复用
+build_cache_v2,零代码改动),评估 pkl 用新 scripts/dump_eval_pkl.py
+(login 节点可跑)从该缓存采样——**三臂评估必须用这个 TinyStories pkl**,
+别拿 FineWeb 的 diag_sample.pkl。
+
+**训练口径**:40k 步(≈2 epoch,WSD decay_frac 0.4,LR 4e-4 同 POC),
+batch 16,三臂统一 grad_ckpt=true(宽臂显存保险;步时三臂间可比,
+与历史 FineWeb run 不可比——无所谓,本实验只看臂间差异)。
+slurm: bltz_ts_cache.sbatch(先跑)→ bltz_ts_{base,wide,swiglu}.sbatch。
+**SwiGLU 臂参数量是 base 的 20 倍**(同宽度规格下 3 矩阵的固有不对称),
+解读时记住:若 swiglu≈wide 则网络种类无差;若 swiglu>wide 需区分
+"种类红利"与"纯参数量红利"(可后补等参对照)。
+
+**验收指标**:snap-PPL/bpb(TinyStories 词表小,覆盖应近 100%,PPL 干净)
++ gmm EM + 生成样本。若 base 在 TinyStories 上能到 bpb ~1 量级且生成通顺
+小故事,则"能力上限"假说被削弱,FineWeb 上的 2.83 bpb 含数据复杂度成分。

@@ -22,6 +22,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class _SwiGLU(nn.Module):
+    """SwiGLU block (2026-09-24 对照实验臂): x -> W3(silu(W1 x) * W2 x)."""
+
+    def __init__(self, d_in: int, d_out: int):
+        super().__init__()
+        self.w1 = nn.Linear(d_in, d_out)
+        self.w2 = nn.Linear(d_in, d_out)
+        self.w3 = nn.Linear(d_out, d_out)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.w3(F.silu(self.w1(x)) * self.w2(x))
+
+
 class MDNHead(nn.Module):
     def __init__(
         self,
@@ -30,13 +43,19 @@ class MDNHead(nn.Module):
         n_comp: int = 64,
         d_emb: int = 48,
         sigma_floor: float = 1e-3,
+        swiglu: bool = False,
     ):
         super().__init__()
         self.n_comp = n_comp
         self.d_emb = d_emb
         self.sigma_floor = sigma_floor
-        self.fc1 = nn.Linear(d_in, hidden)
-        self.fc2 = nn.Linear(hidden, hidden)
+        self.swiglu = swiglu
+        if swiglu:
+            self.fc1 = _SwiGLU(d_in, hidden)
+            self.fc2 = _SwiGLU(hidden, hidden)
+        else:
+            self.fc1 = nn.Linear(d_in, hidden)
+            self.fc2 = nn.Linear(hidden, hidden)
         self.out = nn.Linear(hidden, n_comp * (1 + 2 * d_emb))
         nn.init.normal_(self.out.weight, std=1e-3)
         nn.init.zeros_(self.out.bias)
@@ -44,7 +63,10 @@ class MDNHead(nn.Module):
     def params(self, h: torch.Tensor):
         """h (..., d_in) -> logit_pi (..., K), mu (..., K, d), sigma (..., K, d)."""
         K, D = self.n_comp, self.d_emb
-        x = F.silu(self.fc2(F.silu(self.fc1(h))))
+        if self.swiglu:
+            x = self.fc2(self.fc1(h))
+        else:
+            x = F.silu(self.fc2(F.silu(self.fc1(h))))
         o = self.out(x)
         logit_pi = o[..., :K]
         mu = o[..., K : K + K * D].view(*o.shape[:-1], K, D)
