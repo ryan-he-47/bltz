@@ -46,6 +46,7 @@ def main() -> None:
     ae.load_state_dict(ae_state["model"])
     v2_state = torch.load(v2_path, map_location="cpu", weights_only=False)
     model = BltzLMv2(Cfg(v2_state["cfg"]), ae).to(DEV).eval()
+    model.load_state_dict(v2_state["model"])
 
     hs, lams, sigs, pis = [], [], [], []
     with torch.no_grad():
