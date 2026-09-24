@@ -350,3 +350,24 @@ NMI(h,type)=0.151 < NMI(λ,type)=0.405 符合分工设计;16288 位置、120 例
 失败案例倾倒 checkpoints/semantic_cases.txt。
 诊断日志:checkpoints/diag_v2_typo2b.log / snap_decode_typo2b.log /
 diag_v2_semantic_typo2b.log;ckpt 本地副本 Temp\opencode\v2_typo2b_last.pt。
+
+## snap-PPL 四点 scaling 读数(2026-09-24,snap_decode --ppl,64 seqs,校准 T=10)
+
+词级 PPL / bits-per-byte(表=Qwen∪cache-top10 万,OOV 均匀回退 logN=12.44,
+同一 eval 集,双臂同口径可互比——表字符串集一致,覆盖同为 0.9553):
+
+| ckpt | units | gmm EM | PPL(校准) | bpb(校准) |
+|---|---|---|---|---|
+| plain@60k | 0.49B | 0.357 | 2156 | 3.166 |
+| plain@1B | 1.00B | 0.370 | 1875 | 3.109 |
+| typo@60k | 0.49B | 0.361 | 1302 | 2.958 |
+| typo@2B | 2.41B | 0.382 | **954** | **2.830** |
+
+读数:① 两臂斜率均 ≈ **-0.056 bpb / 数据翻倍**,无饱和;② **bpb 口径下
+typo 臂端到端增量显形**(typo@0.49B 已胜 plain@1.0B,EM 口径曾低估);
+③ 外部锚(语料不同,粗参):GPT-2 117M zero-shot enwik8 1.16 bpb;
+GPT-2 124M OpenWebText 复现(27.5B tok)bpb≈0.93;BLT 1B@100B bytes
+~0.85;Chinchilla 拟合 124M@~2B tok ≈1.1 bpb——我们绝对水平落后 ~2.5×,
+仪器保守性(单 T 校准/表碎片化/OOV 均匀回退)贡献未知部分;
+④ **原始(T=1)分布严重过自信**(bpb 11.6-14.4,比均匀字节还差),
+T=10 一致最优——GMM 密度离散化的校准属性,入档。
