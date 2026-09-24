@@ -47,6 +47,9 @@ def main() -> None:
     v2_state = torch.load(v2_path, map_location="cpu", weights_only=False)
     model = BltzLMv2(Cfg(v2_state["cfg"]), ae).to(DEV).eval()
     model.load_state_dict(v2_state["model"])
+    # load canary (2026-09-24 事故教训): prove we're on the trained ckpt
+    print(f"[load] v2 step {v2_state.get('step')}, ||head.out|| "
+          f"{model.head.out.weight.norm():.2f} (random-init ~1-2)", flush=True)
 
     hs, lams, sigs, pis = [], [], [], []
     with torch.no_grad():
