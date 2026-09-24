@@ -10,9 +10,16 @@ Readouts on eval sequences:
          the principled one: a proper WORD-LEVEL categorical distribution,
          sigma voting included; temperature/top-k/top-p all well-defined)
 
+--ppl mode (2026-09-24): normalize gmm scores over the table -> categorical
+  log p(next unit) -> word-level PPL = exp(mean NLL) and bits-per-byte
+  (bpb = NLL*log2(e)/bytes), the cross-model-comparable metric. True units
+  outside the table (coverage ~95.6%) get a uniform-over-table backoff
+  (log N_table); covered-only and backoff-included numbers both reported.
+
 Usage:
   python scripts/snap_decode.py <v2_ckpt> <ae_ckpt> [--units-pkl pkl]
          [--cache data/fineweb_v2_local] [--topn 100000] [--gen]
+         [--ppl] [--nseqs 64]
 """
 from __future__ import annotations
 
@@ -82,6 +89,9 @@ def main() -> None:
     pkl = sys.argv[sys.argv.index("--units-pkl") + 1] if "--units-pkl" in sys.argv else None
     topn = int(sys.argv[sys.argv.index("--topn") + 1]) if "--topn" in sys.argv else 100_000
     do_gen = "--gen" in sys.argv
+    do_ppl = "--ppl" in sys.argv
+    nseqs = int(sys.argv[sys.argv.index("--nseqs") + 1]) if "--nseqs" in sys.argv \
+        else (64 if do_ppl else 16)
 
     ae_state = torch.load(ae_path, map_location="cpu", weights_only=False)
     ae = ByteStringAE(Cfg(ae_state["cfg"]))
@@ -94,11 +104,23 @@ def main() -> None:
     table, V, Vn, V2 = build_table(model.ae, "data/qwen35_tokenizer", cache_units, topn)
     table_set = set(table)
 
-    seqs = src["distinct_seq_units"][:16]
+    seqs = src["distinct_seq_units"][:nseqs]
     em = {"dec": 0, "cos": 0, "gmm": 0}
     ed2 = {"dec": 0, "cos": 0, "gmm": 0}
     cov = 0
     tot = 0
+    # --ppl accumulators: covered positions vs OOV (uniform-over-table backoff).
+    # Density-quantized categorical is overconfident raw (σ~0.05 -> 30+ nats
+    # dynamic range); temperature-calibrate: fit T on first half of seqs,
+    # report PPL/bpb on second half at that T (and raw T=1).
+    table_idx = {b: i for i, b in enumerate(table)} if do_ppl else None
+    logN = float(np.log(len(table)))
+    TAUS = (1.0, 3.0, 10.0, 30.0, 100.0)
+    nll_cal = {T: 0.0 for T in TAUS}   # covered positions, calib half
+    nll_tst = {T: 0.0 for T in TAUS}   # covered positions, test half
+    oo_cal = oo_tst = 0                # OOV position counts per half
+    bytes_cal = bytes_tst = 0          # covered-position bytes per half
+    oob_cal = oob_tst = 0              # OOV bytes per half
     t0 = time.time()
     with torch.no_grad():
         for si, units in enumerate(seqs):
@@ -112,10 +134,28 @@ def main() -> None:
                 true_b = units[i][: model.l_max]
                 tot += 1
                 cov += int(true_b in table_set)
+                w = gmm_scores(logit_pi[0, i], mu[0, i], sig[0, i], V, V2)
                 k = int(logit_pi[0, i].argmax())
                 dec = bytes(model.ae.decode(mu[0, i, k].reshape(1, -1))[0])
                 cos_s = table[int((F.normalize(mu[0, i, k].reshape(1, -1), dim=-1) @ Vn.T).argmax())]
-                gmm_s = table[int(gmm_scores(logit_pi[0, i], mu[0, i], sig[0, i], V, V2).argmax())]
+                gmm_s = table[int(w.argmax())]
+                if do_ppl:
+                    cal = si < len(seqs) // 2
+                    nb = len(true_b)
+                    if true_b in table_idx:
+                        wj = float(w[table_idx[true_b]])
+                        for T in TAUS:
+                            v = float(torch.logsumexp(w / T, dim=0)) - wj / T
+                            (nll_cal if cal else nll_tst)[T] += v
+                        if cal:
+                            bytes_cal += nb
+                        else:
+                            bytes_tst += nb
+                    else:
+                        if cal:
+                            oo_cal += 1; oob_cal += nb
+                        else:
+                            oo_tst += 1; oob_tst += nb
                 for name, pred in (("dec", dec), ("cos", cos_s), ("gmm", gmm_s)):
                     e = lev(pred, true_b)
                     em[name] += int(e == 0)
@@ -125,6 +165,27 @@ def main() -> None:
     print(f"\ncoverage {cov / tot:.4f} | EM: dec {em['dec'] / tot:.4f} cos {em['cos'] / tot:.4f} "
           f"gmm {em['gmm'] / tot:.4f} | edit<=2: dec {ed2['dec'] / tot:.4f} cos {ed2['cos'] / tot:.4f} "
           f"gmm {ed2['gmm'] / tot:.4f}", flush=True)
+    if do_ppl:
+        log2e = float(np.log2(np.e))
+        n_pos_cal = sum(1 for s_ in seqs[: len(seqs) // 2] for _ in s_[1:-1])
+        n_pos_tst = tot - n_pos_cal
+        in_cal, in_tst = n_pos_cal - oo_cal, n_pos_tst - oo_tst
+        # pick T on calib half (covered positions only)
+        best_T = min(TAUS, key=lambda T: nll_cal[T] / max(in_cal, 1))
+        lines = []
+        for T in TAUS:
+            mark = "*" if T == best_T else " "
+            nll_t = nll_tst[T] + oo_tst * logN
+            nb_t = bytes_tst + oob_tst
+            ppl_t = float(np.exp(nll_t / max(n_pos_tst, 1)))
+            bpb_t = nll_t * log2e / max(nb_t, 1)
+            ppl_cov = float(np.exp(nll_tst[T] / max(in_tst, 1)))
+            bpb_cov = nll_tst[T] * log2e / max(bytes_tst, 1)
+            lines.append(f"{mark} T={T:<5g} test PPL {ppl_t:9.2f} bpb {bpb_t:.4f} "
+                         f"| covered-only PPL {ppl_cov:9.2f} bpb {bpb_cov:.4f}")
+        print(f"[ppl] calib on first half -> best T={best_T:g}; "
+              f"test pos {n_pos_tst} (OOV {oo_tst}, uniform backoff logN={logN:.2f})\n"
+              + "\n".join(lines), flush=True)
 
     if do_gen:
         n_prompts = 4

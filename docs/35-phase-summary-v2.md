@@ -68,9 +68,10 @@
 
 ## 3. 悬在上下文、未(全)落档的信息
 
-1. **集群在途**:**无 bltz job 在跑**(typo-2B 579081 已完成验收,见 §1.10);
-   48-plain 解混 sbatch 已备(bltz_ae_full_plain48 / bltz_v2_plain48_60k),
-   **已挂一次后被用户撤回,是否再挂由用户定夺**。**SSH 必须显式
+1. **集群在途**:**无 bltz job 在跑**(typo-2B 579081 已完成验收,见 §1.10)。
+   **2026-09-24 拍板关闭:v1 全部封存不再续(boundary_2b 弃);48-plain
+   解混臂取消(sbatch 存档不挂);typo-2B 配方(48d typo-AE + MDN 骨干 +
+   增强 BPE)定为默认配置,后续一切基于此。** **SSH 必须显式
    `yihe47@`**(本机用户名「何」会被拒,AGENTS.md 已立规)。
 3. **本地工件**:Temp\opencode 下 ckpt 副本(ae32_full_best、
    ae48_typo_full_best、v2_60k_last、v2_1b_last、v2_typo60k_last、
