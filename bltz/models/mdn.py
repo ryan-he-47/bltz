@@ -44,29 +44,35 @@ class MDNHead(nn.Module):
         d_emb: int = 48,
         sigma_floor: float = 1e-3,
         swiglu: bool = False,
+        depth: int = 2,
     ):
         super().__init__()
         self.n_comp = n_comp
         self.d_emb = d_emb
         self.sigma_floor = sigma_floor
         self.swiglu = swiglu
-        if swiglu:
-            self.fc1 = _SwiGLU(d_in, hidden)
-            self.fc2 = _SwiGLU(hidden, hidden)
-        else:
-            self.fc1 = nn.Linear(d_in, hidden)
-            self.fc2 = nn.Linear(hidden, hidden)
-        self.out = nn.Linear(hidden, n_comp * (1 + 2 * d_emb))
+        self.depth = depth
+        if depth >= 1:
+            if swiglu:
+                self.fc1 = _SwiGLU(d_in, hidden)
+                self.fc2 = _SwiGLU(hidden, hidden) if depth >= 2 else None
+            else:
+                self.fc1 = nn.Linear(d_in, hidden)
+                self.fc2 = nn.Linear(hidden, hidden) if depth >= 2 else None
+        self.out = nn.Linear(hidden if depth >= 1 else d_in, n_comp * (1 + 2 * d_emb))
         nn.init.normal_(self.out.weight, std=1e-3)
         nn.init.zeros_(self.out.bias)
 
     def params(self, h: torch.Tensor):
         """h (..., d_in) -> logit_pi (..., K), mu (..., K, d), sigma (..., K, d)."""
         K, D = self.n_comp, self.d_emb
-        if self.swiglu:
-            x = self.fc2(self.fc1(h))
+        if self.depth == 0:
+            x = h
+        elif self.depth == 1:
+            x = self.fc1(h) if self.swiglu else F.silu(self.fc1(h))
         else:
-            x = F.silu(self.fc2(F.silu(self.fc1(h))))
+            assert self.fc2 is not None, "depth>=2 requires fc2"
+            x = self.fc2(self.fc1(h)) if self.swiglu else F.silu(self.fc2(F.silu(self.fc1(h))))
         o = self.out(x)
         logit_pi = o[..., :K]
         mu = o[..., K : K + K * D].view(*o.shape[:-1], K, D)

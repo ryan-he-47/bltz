@@ -31,6 +31,22 @@ for swiglu in (False, True):
     print(f"swiglu={swiglu}: shapes/backward/sample OK, "
           f"params {sum(p.numel() for p in head.parameters()) / 1e6:.2f}M")
 
+# depth ladder: 0 = linear, 1 = single buffer, 2 = current default
+for depth in (0, 1):
+    head = MDNHead(d_in=96, hidden=H, n_comp=K, d_emb=D, sigma_floor=0.05,
+                   depth=depth).to(dev)
+    assert not hasattr(head, "fc1") or depth >= 1
+    h = torch.randn(2, 7, 96, device=dev)
+    lp, mu, sig = head.params(h)
+    assert lp.shape == (2, 7, K) and sig.shape == (2, 7, K, D)
+    nll = head.nll(h, torch.randn(2, 7, D, device=dev))
+    assert nll.isfinite().all()
+    nll.sum().backward()
+    g = [p.grad is not None and p.grad.isfinite().all() for p in head.parameters()]
+    assert all(g), f"depth={depth}: some head param got no/NaN grad"
+    print(f"depth={depth}: shapes/backward OK, "
+          f"params {sum(p.numel() for p in head.parameters()) / 1e6:.2f}M")
+
 # swiglu block structure
 blk = _SwiGLU(96, H)
 assert isinstance(blk.w1, torch.nn.Linear) and blk.w1.out_features == H
