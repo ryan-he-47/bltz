@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # TinyStories MDN-head ablation, ARM linear (2026-09-24 用户拍板): 纯线性头(0层缓冲)
 # current typo-2B recipe (mdn_hidden 1024, plain SiLU MLP), TinyStories cache,
 # frozen typo-AE (same as typo-2B). 40k steps ~ 2 epochs of TinyStories.
