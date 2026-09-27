@@ -20,6 +20,7 @@ PY=/gpfs1/home/yihe47/miniconda3/envs/cose2/bin/python
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export OMP_NUM_THREADS=4
+export SMOKE_BATCHES="12,16,24,32"
 
 cd "$REPO"
 git pull --ff-only || echo "[smoke] git pull failed, using existing checkout"
