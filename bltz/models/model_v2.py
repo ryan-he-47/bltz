@@ -32,12 +32,22 @@ class BltzLMv2(nn.Module):
                 f"{d_emb} — retrain the AE with the right d_emb (573890 事故: "
                 f"ae.yaml 基础配置未从起跑组 32 改到 48)"
             )
-        self.adapter = nn.Sequential(
-            nn.LayerNorm(d_emb),
-            nn.Linear(d_emb, int(m.adapter_width)),
-            nn.GELU(),
-            nn.Linear(int(m.adapter_width), int(m.d_model)),
-        )
+        # adapter_linear (2026-09-25 control arm): LN + bare Linear lift. The
+        # nonlinear-wide default exists because "a bare linear lift would pin
+        # layer-1's input rank at <=48 and force layer-1's FFN to double as
+        # the adapter" (2026-09-17 拍板) — this arm tests that claim.
+        if bool(m.get("adapter_linear", False)):
+            self.adapter = nn.Sequential(
+                nn.LayerNorm(d_emb),
+                nn.Linear(d_emb, int(m.d_model)),
+            )
+        else:
+            self.adapter = nn.Sequential(
+                nn.LayerNorm(d_emb),
+                nn.Linear(d_emb, int(m.adapter_width)),
+                nn.GELU(),
+                nn.Linear(int(m.adapter_width), int(m.d_model)),
+            )
         self.bos = nn.Parameter(torch.randn(1, 1, d_emb) * 0.02)
         self.backbone = Backbone(
             d_model=int(m.d_model), nhead=int(m.bb_heads), layers=int(m.bb_layers),

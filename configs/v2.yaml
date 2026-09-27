@@ -12,6 +12,8 @@ model:
   ffn_mult: 4
   grad_ckpt: false
   mdn_hidden: 1024                 # two-layer nonlinear buffer before GMM params
+  mdn_depth: 0                     # 0=linear head (2026-09-25: TinyStories 6-arm +
+                                   # FineWeb 60k/2B validation, buffer layers retired)
   n_comp: 64
   sigma_floor: 0.05                # MDN σ 坍缩防护(2026-09-19 拍板:表达力优先;A/B 验证 gn 峰值 176,红线 2000)
 train:

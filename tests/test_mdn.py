@@ -73,4 +73,12 @@ assert isinstance(m2.head.fc1, _SwiGLU), "mdn_swiglu=true must build SwiGLU bloc
 sd = m1.state_dict()
 m3 = BltzLMv2(base, ae)
 m3.load_state_dict(sd)
+
+# adapter_linear (2026-09-25 input-side control): LN + bare Linear lift
+lin = Cfg({"model": {**base.model.to_dict(), "adapter_linear": True},
+           "data": {"n_patches": 16}, "train": {}})
+m4 = BltzLMv2(lin, ae)
+assert len(m4.adapter) == 2, "linear adapter must be LN+Linear"
+assert isinstance(m4.adapter[1], torch.nn.Linear)
+assert len(m1.adapter) == 4, "default adapter must stay LN+MLP"
 print("test_mdn: OK")
