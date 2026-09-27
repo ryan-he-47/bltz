@@ -61,10 +61,19 @@ class BltzLMv2(nn.Module):
         )
 
     def encode_units(self, byte_ids: torch.Tensor, pad_mask: torch.Tensor) -> torch.Tensor:
-        """(B, S, L) -> λ (B, S, d_emb), detached (never trains the AE here)."""
+        """(B, S, L) -> λ (B, S, d_emb), detached (never trains the AE here).
+        Chunked: AE encodes each unit independently, so batching in 8192-row
+        chunks is numerically identical — but avoids CUDA "invalid
+        configuration argument" in MHA when B*S explodes at scale-run batch
+        sizes (49k rows broke the kernel launch, 589472 事故)."""
         B, S, L = byte_ids.shape
+        flat = byte_ids.reshape(B * S, L)
+        pm = pad_mask.reshape(B * S, L)
+        outs = []
         with torch.no_grad():
-            lam = self.ae.encoder(byte_ids.reshape(B * S, L), pad_mask.reshape(B * S, L))
+            for i in range(0, B * S, 8192):
+                outs.append(self.ae.encoder(flat[i : i + 8192], pm[i : i + 8192]))
+        lam = torch.cat(outs, dim=0)
         return lam.view(B, S, -1).detach()
 
     def forward(self, byte_ids: torch.Tensor, pad_mask: torch.Tensor):
