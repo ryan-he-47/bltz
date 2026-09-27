@@ -14,6 +14,7 @@ import torch.nn as nn
 
 from .autoencoder import ByteStringAE
 from .backbone import Backbone
+from .bytelayer import ByteLayerEncoder
 from .mdn import MDNHead
 
 
@@ -32,11 +33,17 @@ class BltzLMv2(nn.Module):
                 f"{d_emb} — retrain the AE with the right d_emb (573890 事故: "
                 f"ae.yaml 基础配置未从起跑组 32 改到 48)"
             )
-        # adapter_linear (2026-09-25 control arm): LN + bare Linear lift. The
-        # nonlinear-wide default exists because "a bare linear lift would pin
-        # layer-1's input rank at <=48 and force layer-1's FFN to double as
-        # the adapter" (2026-09-17 拍板) — this arm tests that claim.
-        if bool(m.get("adapter_linear", False)):
+        # input_mode (2026-09-27 用户设计): frozen = lambda + adapter (original);
+        # learnable = ByteLayerEncoder joint-trained from the NLL — the frozen
+        # AE then serves ONLY as prediction-target generator.
+        self.learnable_input = str(m.get("input_mode", "frozen")) == "learnable"
+        if self.learnable_input:
+            self.in_enc = ByteLayerEncoder(self.l_max, int(m.d_model), int(m.bb_heads))
+        elif bool(m.get("adapter_linear", False)):
+            # adapter_linear (2026-09-25 control arm): LN + bare Linear lift. The
+            # nonlinear-wide default exists because "a bare linear lift would pin
+            # layer-1's input rank at <=48 and force layer-1's FFN to double as
+            # the adapter" (2026-09-17 拍板) — this arm tests that claim.
             self.adapter = nn.Sequential(
                 nn.LayerNorm(d_emb),
                 nn.Linear(d_emb, int(m.d_model)),
@@ -48,7 +55,8 @@ class BltzLMv2(nn.Module):
                 nn.GELU(),
                 nn.Linear(int(m.adapter_width), int(m.d_model)),
             )
-        self.bos = nn.Parameter(torch.randn(1, 1, d_emb) * 0.02)
+        bos_dim = int(m.d_model) if self.learnable_input else d_emb
+        self.bos = nn.Parameter(torch.randn(1, 1, bos_dim) * 0.02)
         self.backbone = Backbone(
             d_model=int(m.d_model), nhead=int(m.bb_heads), layers=int(m.bb_layers),
             ffn_mult=int(m.ffn_mult), max_len=int(cfg.data.n_patches) + 8,
@@ -76,10 +84,26 @@ class BltzLMv2(nn.Module):
         lam = torch.cat(outs, dim=0)
         return lam.view(B, S, -1).detach()
 
+    def backbone_input(self, byte_ids: torch.Tensor, pad_mask: torch.Tensor) -> torch.Tensor:
+        """(B, S, L) -> backbone-ready (B, S, d_model): BOS + shifted input
+        tokens, mode-dependent (frozen: lambda->adapter | learnable: byte layer)."""
+        B, S, _ = byte_ids.shape
+        if self.learnable_input:
+            toks = self.in_enc(byte_ids, pad_mask)
+            return torch.cat([self.bos.expand(B, 1, -1), toks[:, :-1]], dim=1)
+        lam = self.encode_units(byte_ids, pad_mask)
+        x = torch.cat([self.bos.expand(B, 1, -1), lam[:, :-1]], dim=1)
+        return self.adapter(x)
+
     def forward(self, byte_ids: torch.Tensor, pad_mask: torch.Tensor):
         """Returns (h, lam): backbone states h (B, S, d_model) predicting the
         next embedding, and detached targets lam (B, S, d_emb)."""
-        lam = self.encode_units(byte_ids, pad_mask)
+        lam = self.encode_units(byte_ids, pad_mask)  # targets: always frozen AE
         B, S, D = lam.shape
-        x = torch.cat([self.bos.expand(B, 1, D), lam[:, :-1]], dim=1)  # BOS, λ_1..λ_{S-1}
-        return self.backbone(self.adapter(x)), lam
+        if self.learnable_input:
+            toks = self.in_enc(byte_ids, pad_mask)
+            x = torch.cat([self.bos.expand(B, 1, -1), toks[:, :-1]], dim=1)
+        else:
+            x = torch.cat([self.bos.expand(B, 1, D), lam[:, :-1]], dim=1)  # BOS, λ_1..λ_{S-1}
+            x = self.adapter(x)
+        return self.backbone(x), lam

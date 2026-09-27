@@ -87,8 +87,7 @@ def main() -> None:
             byte_ids, lens, pad_mask = tensorize(units, model.l_max, DEV)
             lam = model.encode_units(byte_ids.unsqueeze(0), pad_mask.unsqueeze(0))
             S, D = lam.shape[1], lam.shape[2]
-            x = torch.cat([model.bos.expand(1, 1, -1), lam[:, :-1]], dim=1)
-            h = model.backbone(model.adapter(x))
+            h = model.backbone(model.backbone_input(byte_ids.unsqueeze(0), pad_mask.unsqueeze(0)))
             logit_pi, mu, _ = (t.float() for t in model.head.params(h))
             cos = F.cosine_similarity(mu[0, :, :, :].float(),
                                       lam[0].float().unsqueeze(1).expand(-1, 64, -1), dim=-1)
@@ -112,8 +111,7 @@ def main() -> None:
             byte_ids, lens, pad_mask = tensorize(units, model.l_max, DEV)
             lam = model.encode_units(byte_ids.unsqueeze(0), pad_mask.unsqueeze(0))
             S, D = lam.shape[1], lam.shape[2]
-            x = torch.cat([model.bos.expand(1, 1, -1), lam[:, :-1]], dim=1)
-            h = model.backbone(model.adapter(x))
+            h = model.backbone(model.backbone_input(byte_ids.unsqueeze(0), pad_mask.unsqueeze(0)))
             logit_pi, mu, _ = (t.float() for t in model.head.params(h))
             topk = logit_pi[0].topk(TOPK, -1).indices
             for i in range(2, S - 1):

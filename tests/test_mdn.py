@@ -9,6 +9,7 @@ from bltz.config import Cfg, load
 from bltz.models.autoencoder import ByteStringAE
 from bltz.models.mdn import MDNHead, _SwiGLU
 from bltz.models.model_v2 import BltzLMv2
+from bltz.objectives_v2 import mdn_nll_loss
 
 dev = "cuda" if torch.cuda.is_available() else "cpu"
 K, D, H = 8, 16, 6208  # output width K*(1+2D) = 8*33 = 264 here; H tests width plumbing
@@ -81,4 +82,23 @@ m4 = BltzLMv2(lin, ae)
 assert len(m4.adapter) == 2, "linear adapter must be LN+Linear"
 assert isinstance(m4.adapter[1], torch.nn.Linear)
 assert len(m1.adapter) == 4, "default adapter must stay LN+MLP"
+
+# learnable input (2026-09-27): ByteLayerEncoder joint-trained, frozen AE
+# serves targets only. Gradients must reach the byte layer.
+B, S, L = 3, 16, 12
+byte_ids = torch.randint(32, 126, (B, S, L))
+lens = torch.randint(2, L + 1, (B, S))
+pad_mask = torch.arange(L).expand(B, S, L) >= lens[..., None]
+lcfg = Cfg({"model": {**base.model.to_dict(), "input_mode": "learnable"},
+            "data": {"n_patches": 16}, "train": {}})
+m5 = BltzLMv2(lcfg, ae)
+assert hasattr(m5, "in_enc") and not hasattr(m5, "adapter"), "learnable: no adapter"
+assert m5.bos.shape[-1] == 96, "BOS must live in d_model space"
+hb, lam5 = m5(byte_ids, pad_mask)
+assert hb.shape == (B, S, 96) and lam5.shape == (B, S, 16)
+loss5 = mdn_nll_loss(m5, {"byte_ids": byte_ids, "pad_mask": pad_mask}, lcfg)
+loss5.backward()
+assert all(p.grad is not None and p.grad.abs().sum() > 0 for p in m5.in_enc.parameters()), \
+    "byte layer must receive gradients"
+assert all(p.grad is None for p in m5.ae.parameters()), "frozen AE must stay clean"
 print("test_mdn: OK")

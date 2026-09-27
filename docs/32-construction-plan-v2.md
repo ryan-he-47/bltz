@@ -569,3 +569,24 @@ decay_frac 0.07 全程衰减,afterok 依赖 A;A 若超时被 slurm 取消,
 重提 A 跑完后手动挂 B)。ckpt:滚动 3 份无永久里程碑(ckpt_keep=3,
 trainer 轮转已推广 N 份)。中期模型 = scale_05b_anneal/best.pt,
 验收后再决定是否烧下半截(33242 步 + 尾段退火)。
+
+### learnable-input 判据实验(2026-09-27 用户设计)
+
+**洞察**(用户):冻结编码器只需提供**预测目标**;输入侧可以另起随机初始化
+的字节层与骨干**梯度联通联合训练**,骨干直看字节 patch,免去学习解析冻结
+λ 序列的压力(冻结的必要性只在目标侧——词表吸附解码的地基)。
+新字节层规格(用户):**非 Set Transformer**,骨干同宽一层普通 transformer,
+单 patch 感受野、局部位置索引、注意力池化(PMA)不变。
+
+**实现**:bltz/models/bytelayer.py(ByteLayerEncoder:byte+pos emb →
+1×TransformerEncoderLayer(pre-norm GELU)→ PMA);model_v2 加
+`model.input_mode: frozen|learnable`(默认 frozen 旧 ckpt 全兼容;
+learnable 去 adapter,BOS 住 d_model);三评测脚本改走 backbone_input()
+统一入口(生成循环改增长列表重算);test_mdn 补 learnable 前向/反传/
+字节层梯度/frozen-AE 干净断言;15 测试全绿,frozen 路径对 v2_lin_60k
+逐位复现(-61.393/0.3582)零漂移。
+
+**判据实验**(bltz_v2_learnin_60k,与 scale A 并行):lin@60k 同配方
+唯一变量 input_mode=learnable;对照 v2_lin_60k(NLL -61.39/EM 0.358-0.368/
+PPL 1019/bpb 2.857)。胜 → 输入侧换血进 scale 主线;败 → 冻结输入设计
+保留。scale A/B(旧架构 0.5B)按用户指示原样保留作基线。

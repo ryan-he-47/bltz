@@ -102,8 +102,7 @@ def main() -> None:
             byte_ids, lens, pad_mask = tensorize(units, model.l_max, DEV)
             lam = model.encode_units(byte_ids.unsqueeze(0), pad_mask.unsqueeze(0))
             S, D = lam.shape[1], lam.shape[2]
-            x = torch.cat([model.bos.expand(1, 1, -1), lam[:, :-1]], dim=1)
-            h = model.backbone(model.adapter(x))
+            h = model.backbone(model.backbone_input(byte_ids.unsqueeze(0), pad_mask.unsqueeze(0)))
             logit_pi, mu, sigma = (t.float() for t in model.head.params(h))
             # NLL + pi stats (skip BOS position 0)
             z = (lam.unsqueeze(-2).float() - mu) / sigma
@@ -174,16 +173,15 @@ def main() -> None:
     # ---- generation with confidence-rerank reprojection ----------------------
     print("\n=== generation (sample component, conf-rerank top-3, reproject) ===", flush=True)
     prompt_units = seqs[0][:GEN_PREFIX]
-    byte_ids, lens, pad_mask = tensorize(prompt_units, model.l_max, DEV)
-    lam0 = model.encode_units(byte_ids.unsqueeze(0), pad_mask.unsqueeze(0))
     for tau in (0.7, 1.0):
         torch.manual_seed(0)
-        cur = torch.cat([model.bos.expand(1, 1, -1), lam0], dim=1)
+        cur_units = list(prompt_units)
         outs: list[str] = []
         confs_out: list[float] = []
         with torch.no_grad():
             for _ in range(GEN_STEPS):
-                h = model.backbone(model.adapter(cur))[:, -1:]
+                bids, _, pmask = tensorize(cur_units, model.l_max, DEV)
+                h = model.backbone(model.backbone_input(bids.unsqueeze(0), pmask.unsqueeze(0)))[:, -1:]
                 logit_pi, mu, _ = model.head.params(h)
                 lp = logit_pi[0, 0].float()
                 k3 = lp.topk(3).indices
@@ -199,9 +197,7 @@ def main() -> None:
                 bs = bytes(dl[best])
                 confs_out.append(float(cs[best]))
                 outs.append(bs.decode("utf-8", errors="replace"))
-                bids, _, pmask = tensorize([bs], model.l_max, DEV)
-                lam_r = model.encode_units(bids.unsqueeze(0), pmask.unsqueeze(0))
-                cur = torch.cat([cur, lam_r], dim=1)
+                cur_units.append(bs)
         joined = "".join(outs)
         print(f"\n--- tau={tau} top3-conf-rerank (distinct {len(set(outs))}/{GEN_STEPS}, "
               f"mean conf {np.mean(confs_out):.3f}) ---\n{joined[:600]}", flush=True)
