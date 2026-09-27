@@ -47,12 +47,20 @@ def grad_norm(model: torch.nn.Module) -> float:
     return total**0.5
 
 
+def _state_model(m: torch.nn.Module) -> torch.nn.Module:
+    """Strip DDP / loss-wrapper layers -> the module whose state_dict matches
+    the on-disk ckpt format (single-GPU runs: identity)."""
+    m = getattr(m, "module", m)
+    return getattr(m, "core", m)
+
+
 def train(
     model: torch.nn.Module,
     batch_fn: Callable[[], dict[str, torch.Tensor]],
     cfg,
     device: str = "cuda",
     loss_fn: Callable[[torch.nn.Module, dict[str, torch.Tensor], Any], torch.Tensor] | None = None,
+    is_rank0: bool = True,
 ) -> list[dict[str, Any]]:
     """batch_fn() -> batch dict (CPU tensors). Returns the log history.
 
@@ -96,7 +104,7 @@ def train(
         # load to CPU: RNG state must be a CPU ByteTensor for set_rng_state;
         # model/optimizer states are placed on the model's device by load_state_dict.
         state = torch.load(resume, map_location="cpu", weights_only=False)
-        model.load_state_dict(state["model"])
+        _state_model(model).load_state_dict(state["model"])
         start_step = int(state["step"]) + 1
         if "opt" in state:
             opt.load_state_dict(state["opt"])
@@ -162,6 +170,8 @@ def train(
     def save_full(
         step: int, name: str = "ckpt_full.pt", rotate: bool = True, state_only: bool = False
     ) -> None:
+        if not is_rank0:  # DDP: only rank 0 writes (concurrent torch.save corrupts)
+            return
         # rotate: ckpt_full.pt -> ckpt_full.pt.1 (one previous full state kept,
         # so a post-collapse checkpoint is not the only recovery point).
         # milestones pass rotate=False + state_only=True (weight-only: 0.55GB
@@ -173,7 +183,7 @@ def train(
             if os.path.exists(bak):
                 os.remove(bak)
             os.replace(path, bak)
-        payload: dict[str, Any] = {"model": model.state_dict(), "cfg": cfg.to_dict(), "step": step}
+        payload: dict[str, Any] = {"model": _state_model(model).state_dict(), "cfg": cfg.to_dict(), "step": step}
         if not state_only:
             payload.update(
                 {
@@ -189,6 +199,8 @@ def train(
         torch.save(payload, path)
 
     def log(rec: dict[str, Any]) -> None:
+        if not is_rank0:
+            return
         history.append(rec)
         line = json.dumps(rec, ensure_ascii=False)
         with open(log_path, "a", encoding="utf-8") as f:
@@ -238,10 +250,11 @@ def train(
             last_loss = lval
             if lval < best:
                 best = lval
-                torch.save(
-                    {"model": model.state_dict(), "cfg": cfg.to_dict(), "step": step, "loss": lval},
-                    os.path.join(tcfg.ckpt_dir, "best.pt"),
-                )
+                if is_rank0:
+                    torch.save(
+                        {"model": _state_model(model).state_dict(), "cfg": cfg.to_dict(), "step": step, "loss": lval},
+                        os.path.join(tcfg.ckpt_dir, "best.pt"),
+                    )
             if step % tcfg.log_every == 0 or step == tcfg.steps - 1:
                 log({
                     "step": step,

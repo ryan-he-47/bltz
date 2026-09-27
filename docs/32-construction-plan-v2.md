@@ -535,3 +535,22 @@ EM 小涨 ✗(-1pp)。**判定:σ_min=0.05 不是学习效率瓶颈;松地板买
 非小数据偶然;π 有效分量更多(线性直达梯度让混合用上更多分量)与梯度
 流故事自洽。**mdn_depth=0 升默认**(等用户拍板后改 v2.yaml)。
 TinyStories 六臂 + FineWeb 双档 = 缓冲层设计正式退役。
+
+## scale 准备(2026-09-27 用户拍板)
+
+**目标**:0.5B 骨干(d_model 1024 / 28 层 / 16 头,Qwen3-0.6B 线)+ 全量
+12.6B units 单遍 + 4k 上下文(n_patches=4096)+ 双卡 DDP。看齐现代小模型。
+
+**改造**(全部入码,15 测试回归过;test_v2 过拟合断言曾一次边缘抖动,重跑绿):
+- trainer.py:_state_model() 剥 DDP/wrapper 前缀(ckpt 格式不变,旧 ckpt 兼容);
+  is_rank0 守卫 log/best/save(并发 torch.save 会写坏 ckpt)。
+- train_bltz_v2.py:_LossModule(把 head.nll 拉进 DDP forward,免
+  find_unused_parameters);torchrun 入口(WORLD_SIZE/LOCAL_RANK);每 rank
+  异种子采样(seed+7919*rank);attention 后端开关(attn_flash/attn_math,
+  V100 无 flash 走 mem-efficient)。**spike_skip 无需同步**:allreduce 后
+  gn/found_inf 天然全 rank 一致(inf 随均值扩散)。
+- smoke_scale.py + bltz_scale_smoke.sbatch:0.5B@S=4096 双卡扫 batch
+  {1,2,4,8},报峰值显存/步时/后端 → 据此定 batch/LR 后挂全量。
+
+**预算**:全量单遍 FLOPs ≈ 6×5e8×1.26e10 ≈ 3.8e19;2×V100@~40 TFLOPS
+≈ 5.5 天(35% MFU),5 天墙内可能要续一个墙期。
