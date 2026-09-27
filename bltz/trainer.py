@@ -92,6 +92,7 @@ def train(
     best = float("inf")
     last_loss = float("nan")
     skips = 0
+    consec_skips = 0
     t0 = time.time()
 
     # ---- breakpoint resume (--set train.resume=<ckpt_full.pt>) ----
@@ -235,10 +236,18 @@ def train(
             thresh = max(tcfg.spike_skip * median, 2000.0) if median is not None else float("inf")
             if not math.isfinite(gn) or gn > thresh:
                 skips += 1
+                consec_skips += 1
                 log({"step": step, "event": "spike_skip", "gn": round(gn, 1), "thresh": round(thresh, 1)})
                 if not use_bf16:
                     scaler.update()  # keep the scale fresh on skipped steps
+                if consec_skips >= 500:
+                    # stall watchdog (589611 事故: 全 NaN 步烧了 8800 步才被人工
+                    # 停下 — 500 连跳即视为停滞,保存后退出等人工分析)
+                    log({"step": step, "event": "stall_watchdog", "consec": consec_skips})
+                    stopped = f"stall_watchdog({consec_skips} consecutive skips)"
+                    break
                 continue
+            consec_skips = 0
             med_hist.append(gn)
             torch.nn.utils.clip_grad_norm_(model.parameters(), tcfg.clip)
             if use_bf16:
