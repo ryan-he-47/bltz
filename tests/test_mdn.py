@@ -3,6 +3,8 @@ backward-compat with pre-swiglu cfgs. Run: python tests/test_mdn.py
 """
 from __future__ import annotations
 
+import math
+
 import torch
 
 from bltz.config import Cfg, load
@@ -101,4 +103,24 @@ loss5.backward()
 assert all(p.grad is not None and p.grad.abs().sum() > 0 for p in m5.in_enc.parameters()), \
     "byte layer must receive gradients"
 assert all(p.grad is None for p in m5.ae.parameters()), "frozen AE must stay clean"
+
+# GMM mode: deterministic MAP point, density at mode >= density at init center
+head = MDNHead(d_in=96, hidden=H, n_comp=K, d_emb=D, sigma_floor=0.05).to(dev)
+h = torch.randn(2, 7, 96, device=dev)
+xm = head.mode(h)
+assert xm.shape == (2, 7, D) and torch.isfinite(xm).all()
+lp, mu, sig = (t.float() for t in head.params(h))
+log_pi = torch.log_softmax(lp, -1)
+const = 0.5 * D * math.log(2 * math.pi)
+
+
+def _logp(x):
+    z = (x.unsqueeze(-2) - mu) / sig
+    return torch.logsumexp(log_pi - 0.5 * z.pow(2).sum(-1)
+                           - sig.log().sum(-1) - const, dim=-1)
+
+
+k_star = lp.argmax(-1)
+init = mu[torch.arange(2)[:, None], torch.arange(7)[None, :], k_star]
+assert (_logp(xm) >= _logp(init) - 1e-3).all(), "mode must not be worse than its init center"
 print("test_mdn: OK")

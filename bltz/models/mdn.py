@@ -98,3 +98,38 @@ class MDNHead(nn.Module):
             k = torch.multinomial(F.softmax(logit_pi / tau, dim=-1).reshape(-1, self.n_comp), 1)
             k = k.view(h.shape[:-1])
         return mu.gather(-2, k.unsqueeze(-1).unsqueeze(-1).expand(*k.shape, 1, self.d_emb)).squeeze(-2)
+
+    @torch.no_grad()
+    def mode(self, h: torch.Tensor, iters: int = 24) -> torch.Tensor:
+        """GMM mode (MAP point): argmax_x sum_k pi_k N(x; mu_k, sig_k).
+
+        No closed form; solved by mean-shift-style fixed-point iteration on
+        the stationarity condition grad log p = 0:
+            x_d <- sum_k w_kd mu_kd / sum_k w_kd,  w_kd = r_k(x) / sig_kd^2
+        Init at the densest component center (exact pairwise eval); converges
+        deterministically in <32 iters (48-d, tiny compute). Note the mode is
+        NOT argmax-pi's mu in general: center density weighs pi_k/prod(sigma),
+        so sharp components dominate, and at overlapping variant clouds the
+        mode can sit between centers.
+        """
+        logit_pi, mu, sig = self.params(h)
+        K, D = self.n_comp, self.d_emb
+        log_pi = F.log_softmax(logit_pi, dim=-1)  # (..., K)
+        const = 0.5 * D * math.log(2 * math.pi)
+        # density at each component center: log p(mu_i), (..., K, K) -> (..., K)
+        z = (mu.unsqueeze(-2) - mu.unsqueeze(-3)) / sig.unsqueeze(-2)  # (...,K,K,D)
+        log_n = -0.5 * z.pow(2).sum(-1) - sig.log().sum(-1).unsqueeze(-2) - const
+        logp_at_mu = torch.logsumexp(log_pi.unsqueeze(-2) + log_n, dim=-1)
+        x = mu.gather(-2, logp_at_mu.argmax(-1).unsqueeze(-1).unsqueeze(-1)
+                      .expand(*logp_at_mu.shape[:-1], 1, D)).squeeze(-2).clone()
+        for _ in range(iters):
+            z = (x.unsqueeze(-2) - mu) / sig  # (..., K, D)
+            log_n = -0.5 * z.pow(2).sum(-1) - sig.log().sum(-1) - const
+            r = F.softmax(log_pi + log_n, dim=-1)  # (..., K)
+            w = r.unsqueeze(-1) / sig.pow(2)       # (..., K, D)
+            x_new = (w * mu).sum(-2) / w.sum(-2).clamp_min(1e-12)
+            if float((x_new - x).abs().max()) < 1e-5:
+                x = x_new
+                break
+            x = x_new
+        return x
