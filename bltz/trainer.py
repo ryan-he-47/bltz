@@ -172,17 +172,18 @@ def train(
     ) -> None:
         if not is_rank0:  # DDP: only rank 0 writes (concurrent torch.save corrupts)
             return
-        # rotate: ckpt_full.pt -> ckpt_full.pt.1 (one previous full state kept,
-        # so a post-collapse checkpoint is not the only recovery point).
-        # milestones pass rotate=False + state_only=True (weight-only: 0.55GB
-        # vs 1.7GB full — 2026-09-13 scratch quota is 300GB; a branch fork
-        # restarts the optimizer anyway, exact-state recovery uses rotation).
+        # rotate: shift ckpt_full.pt -> .1 -> .2 ... keeping ckpt_keep copies
+        # (rolling window, 2026-09-27 用户拍板: scale run 只留最近 3 份,
+        # disk quota 撑不住永久里程碑堆叠).
         path = os.path.join(tcfg.ckpt_dir, name)
         if rotate and ckpt_keep > 1 and os.path.exists(path):
-            bak = path + ".1"
-            if os.path.exists(bak):
-                os.remove(bak)
-            os.replace(path, bak)
+            oldest = f"{path}.{ckpt_keep - 1}"
+            if os.path.exists(oldest):
+                os.remove(oldest)
+            for i in range(ckpt_keep - 2, -1, -1):
+                src = path if i == 0 else f"{path}.{i}"
+                if os.path.exists(src):
+                    os.replace(src, f"{path}.{i + 1}")
         payload: dict[str, Any] = {"model": _state_model(model).state_dict(), "cfg": cfg.to_dict(), "step": step}
         if not state_only:
             payload.update(
