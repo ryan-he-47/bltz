@@ -26,7 +26,7 @@ git pull --ff-only || echo "[smoke] git pull failed, using existing checkout"
 
 $PY -m torch.distributed.run --nproc_per_node=2 --master_port=29517 scripts/smoke_scale.py configs/v2.yaml \
   --set model.d_model=1024 --set model.bb_layers=28 --set model.bb_heads=16 \
-  --set model.d_emb=48 --set model.mdn_depth=0 \
+  --set model.d_emb=48 --set model.mdn_depth=0 --set model.grad_ckpt=true \
   --set data.n_patches=4096 --set data.cache_dir="$SCRATCH/data/fineweb10b_v2" \
   --set train.ae_ckpt="$SCRATCH/ckpts/ae_48_256_typo_full/best.pt" \
   --set train.bf16=false
