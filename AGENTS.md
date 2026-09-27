@@ -157,6 +157,9 @@ bltz(byte-aware learnable tokenizer,原名 ByteField,致敬 BLT):词表 free 的
 
 ## 硬性规则(violations are blocking)
 
+- **解码/读出一律走密度泛函(snap argmax / GMM mode),严禁把分量均值
+  当词用**(2026-09-28 洞察:分量=密度基函数而非语义单元,合作多分量
+  叠峰时模式可不在任何 μ_k 上;详见 docs/31 后记)。
 - **用户对每个技术决策有最终拍板权。** 不许擅自改架构、超参、数据集、训练流程。
   到达决策点时用 `question` 工具提问,给选项+工作量估计+推荐。
 - **用户兼任资源收集员。** 需要而我拿不到的资源(权重、数据集、包、repo),
