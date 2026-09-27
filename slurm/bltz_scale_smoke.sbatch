@@ -24,7 +24,7 @@ export OMP_NUM_THREADS=4
 cd "$REPO"
 git pull --ff-only || echo "[smoke] git pull failed, using existing checkout"
 
-torchrun --nproc_per_node=2 --master_port=29517 scripts/smoke_scale.py configs/v2.yaml \
+$PY -m torch.distributed.run --nproc_per_node=2 --master_port=29517 scripts/smoke_scale.py configs/v2.yaml \
   --set model.d_model=1024 --set model.bb_layers=28 --set model.bb_heads=16 \
   --set model.d_emb=48 --set model.mdn_depth=0 \
   --set data.n_patches=4096 --set data.cache_dir="$SCRATCH/data/fineweb10b_v2" \
