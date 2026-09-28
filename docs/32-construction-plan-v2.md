@@ -665,3 +665,20 @@ ckpt 可续)。
 **磁盘**:旧混合缓存已删(用户拍板;本地 E: 有 56 文件 md5 对账的备份),
 集群 data/ 剩 32G。链条:bltz_cache_v2_bpe(新缓存+eval pkl)→afterok→
 bltz_v2_bpe_60k(判据训练)。
+
+### 整词切分臂 trial(2026-09-28 用户设计第三臂,本地 blob 试验)
+
+规则:Unicode 层符号/非符号二分类——同类连续字符打包成一个 patch
+(非符号=整词含数字串,符号=纯净分隔符/标点串);超 32B 的 patch 用 BPE
+兜底切开。segment_word() 已入 segment_v2.py(确定性)。FineWeb-Edu
+blob 3000 docs 实测:
+
+- patch 长度:mean **3.03B**(word 4.88B / symbol 1.18B;median 2)
+- 构成:word:symbol = 50:50(按个数;空格各自成 patch)
+- units/doc ~1534(纯 BPE ~1028;S=512 的文本覆盖降至 ~1.55KB,
+  推理步数/字节 ~1.5× 于纯 BPE——效率代价)
+- BPE 兜底触发率 0.01/doc(英文长词极少超 32B)
+- 样本形态:[Stock,' ',farmers,' ',...,'02','/','07','/','2012',' | ']
+  语义最清晰 ✓
+- **AE 承受力:EM 99.21% / byte-acc 99.57% / CE 0.020**(参照:纯 BPE
+  99.86%、混合 99.85%)——整词长单位上轻微退化,可接受,无需重训。

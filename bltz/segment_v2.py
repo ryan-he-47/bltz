@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import random
+import unicodedata
 from functools import lru_cache
 
 import numpy as np
@@ -70,6 +71,56 @@ def bpe_boundaries(raw: bytes, tok_dir: str) -> set[int]:
         if 0 < b < len(raw):
             out.add(b)
     return out
+
+
+def _is_nonsymbol(ch: str) -> bool:
+    """Unicode-level classification (2026-09-28 word-arm spec): letters and
+    numbers are non-symbol (word runs); everything else — punctuation,
+    whitespace, symbols, marks, surrogates — is a symbol run."""
+    return unicodedata.category(ch)[0] in ("L", "N")
+
+
+def segment_word(raw: bytes, tok_dir: str, l_max: int = 32) -> list[bytes]:
+    """Whole-word-dominant segmentation (user spec, 2026-09-28 third arm):
+
+    Classify chars at the Unicode level into symbol / non-symbol; consecutive
+    chars of one class form ONE patch (non-symbol runs = whole words incl.
+    CJK; symbol runs = pure separators / punctuation sequences). Any patch
+    over l_max bytes is split with Qwen BPE (tokens hard-capped at l_max).
+    Deterministic — no rng.
+    """
+    s = raw.decode("utf-8", errors="surrogateescape")
+    runs: list[str] = []
+    cur: list[str] = []
+    cur_cls: bool | None = None
+    for ch in s:
+        cls = _is_nonsymbol(ch)
+        if cur_cls is None or cls == cur_cls:
+            cur.append(ch)
+            cur_cls = cls
+        else:
+            runs.append("".join(cur))
+            cur = [ch]
+            cur_cls = cls
+    if cur:
+        runs.append("".join(cur))
+    units: list[bytes] = []
+    for run in runs:
+        b = run.encode("utf-8", errors="surrogateescape")
+        if not b:
+            continue
+        if len(b) <= l_max:
+            units.append(b)
+        else:
+            cuts = sorted(bpe_boundaries(b, tok_dir)) or []
+            pos = 0
+            for g in cuts + [len(b)]:
+                piece = b[pos:g]
+                pos = g
+                for i in range(0, len(piece), l_max):
+                    if piece[i : i + l_max]:
+                        units.append(piece[i : i + l_max])
+    return units
 
 
 def segment_v2(
