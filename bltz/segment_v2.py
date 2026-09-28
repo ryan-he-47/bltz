@@ -80,32 +80,74 @@ def _is_nonsymbol(ch: str) -> bool:
     return unicodedata.category(ch)[0] in ("L", "N")
 
 
-def segment_word(raw: bytes, tok_dir: str, l_max: int = 32) -> list[bytes]:
-    """Whole-word-dominant segmentation (user spec, 2026-09-28 third arm):
+def segment_word(raw: bytes, tok_dir: str, l_max: int = 32,
+                 merge: str = "prev") -> list[bytes]:
+    """Whole-word-dominant segmentation (user spec v2, 2026-09-28 third arm):
 
-    Classify chars at the Unicode level into symbol / non-symbol; consecutive
-    chars of one class form ONE patch (non-symbol runs = whole words incl.
-    CJK; symbol runs = pure separators / punctuation sequences). Any patch
-    over l_max bytes is split with Qwen BPE (tokens hard-capped at l_max).
+    Unicode classes: digit / word(letter) / symbol.
+      * every DIGIT char is its own patch (digit strings compress worst and
+        whole-string prediction is hard — user rule 2);
+      * letters form maximal word runs (whole words, CJK runs too);
+      * symbols form maximal runs (pure separators / punct sequences);
+      * a patch that is exactly ONE space merges into an adjacent word patch
+        (merge="prev": trailing style 'Stock ' — user rule 1; merge="next":
+        leading style ' Stock' — the AE's native enhanced-BPE style, see
+        2026-09-28 bucket finding), never into a digit patch;
+      * any patch over l_max bytes is split with Qwen BPE (tokens capped).
     Deterministic — no rng.
     """
     s = raw.decode("utf-8", errors="surrogateescape")
-    runs: list[str] = []
+
+    def _cls(ch: str) -> str:
+        c = unicodedata.category(ch)[0]
+        return "D" if c == "N" else ("W" if c == "L" else "S")
+
+    patches: list[str] = []
     cur: list[str] = []
-    cur_cls: bool | None = None
+    cur_cls: str | None = None
     for ch in s:
-        cls = _is_nonsymbol(ch)
-        if cur_cls is None or cls == cur_cls:
+        cls = _cls(ch)
+        if cls == "D":
+            if cur:
+                patches.append("".join(cur))
+                cur = []
+                cur_cls = None
+            patches.append(ch)  # digit: always alone
+        elif cls == cur_cls:
             cur.append(ch)
-            cur_cls = cls
         else:
-            runs.append("".join(cur))
+            if cur:
+                patches.append("".join(cur))
             cur = [ch]
             cur_cls = cls
     if cur:
-        runs.append("".join(cur))
+        patches.append("".join(cur))
+
+    def _is_digit_patch(p: str) -> bool:
+        return len(p) == 1 and _cls(p[0]) == "D"
+
+    if merge == "next":
+        out: list[str] = []
+        i = 0
+        while i < len(patches):
+            p = patches[i]
+            if p == " " and i + 1 < len(patches) and not _is_digit_patch(patches[i + 1]):
+                out.append(" " + patches[i + 1])
+                i += 2
+            else:
+                out.append(p)
+                i += 1
+        merged = out
+    else:  # merge == "prev" (user rule 1 literal)
+        merged = []
+        for p in patches:
+            if p == " " and merged and not _is_digit_patch(merged[-1]):
+                merged[-1] = merged[-1] + " "
+                continue
+            merged.append(p)
+
     units: list[bytes] = []
-    for run in runs:
+    for run in merged:
         b = run.encode("utf-8", errors="surrogateescape")
         if not b:
             continue
