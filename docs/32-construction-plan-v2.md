@@ -648,3 +648,20 @@ pre-norm 块残差流无界 → fp16 反向激活梯度越过 65504 悬崖;GradS
 (连续 500 跳步 → 保存退出,不再烧 8800 步冤枉算力)。压力测(fp16+scaler
 300 步从零):4 次散发事件全部自愈,无新增,无瘫痪。15+4 测试全绿。
 旧 ckpt 留档 v2_learnin_60k_crash1;重跑自零起。
+
+### 纯 BPE 切词消融(2026-09-28 用户洞察,进行中)
+
+**漏洞**(用户):增强 BPE 的 p_disagree 随机化让"整词 vs 子词"在每个位置
+成为不可预测分支——GMM 被迫用容量覆盖同一可能性的重复表示(整词与其
+子词拆分)。此隐患自第一个 v2 缓存起污染全部实验。**全线暂停**
+(589769 learnin / 589532 scale half / 589533 anneal 均已 scancel,
+ckpt 可续)。
+
+**消融**:segment_v2 加 pure_bpe 模式(只取 Qwen BPE 边界,零随机,
+同词恒定切法;确定性验证过);build_cache_v2 支持 seg.pure_bpe,meta
+记 type=pure_bpe。配方按 lin@60k(唯一变量=切词;冻结输入+typo-AE 不动)。
+对照 v2_lin_60k:NLL -61.39/EM 0.358-0.368/PPL 1019/bpb 2.857。
+
+**磁盘**:旧混合缓存已删(用户拍板;本地 E: 有 56 文件 md5 对账的备份),
+集群 data/ 剩 32G。链条:bltz_cache_v2_bpe(新缓存+eval pkl)→afterok→
+bltz_v2_bpe_60k(判据训练)。

@@ -78,16 +78,27 @@ def segment_v2(
     tok_dir: str,
     p: float = 0.5,
     l_max: int = 32,
+    pure_bpe: bool = False,
 ) -> list[bytes]:
-    """Enhanced-BPE segment one sample into byte-string units."""
-    pre = pre_boundaries(raw)
+    """Segment one sample into byte-string units.
+
+    pure_bpe (2026-09-28 用户洞察): use ONLY Qwen BPE boundaries — fully
+    deterministic (same word always segments the same way). The enhanced
+    mode's p_disagree randomness made "whole word vs its subwords" an
+    unpredictable branch at every position, wasting GMM capacity on
+    duplicate representations of the same possibility.
+    """
     bpe = bpe_boundaries(raw, tok_dir)
-    cuts: list[int] = []
-    for g in sorted(pre | bpe):
-        if g in pre and g in bpe:
-            cuts.append(g)
-        elif rng.random() < p:
-            cuts.append(g)
+    if pure_bpe:
+        cuts = sorted(bpe)
+    else:
+        pre = pre_boundaries(raw)
+        cuts = []
+        for g in sorted(pre | bpe):
+            if g in pre and g in bpe:
+                cuts.append(g)
+            elif rng.random() < p:
+                cuts.append(g)
     units: list[bytes] = []
     pos = 0
     for g in cuts + [len(raw)]:
@@ -105,6 +116,7 @@ def segment_v2_batch(
     tok_dir: str,
     p: float = 0.5,
     l_max: int = 32,
+    pure_bpe: bool = False,
 ) -> list[list[bytes]]:
     """Batch variant: one Rust-side encode_batch (releases GIL, uses threads)
     instead of per-doc encode calls. Falls back to the per-doc path on any
@@ -115,10 +127,9 @@ def segment_v2_batch(
         if len(encs) != len(raws):
             raise ValueError("encode_batch length mismatch")
     except Exception:
-        return [segment_v2(r, rng, tok_dir, p, l_max) for r, rng in zip(raws, rngs)]
+        return [segment_v2(r, rng, tok_dir, p, l_max, pure_bpe) for r, rng in zip(raws, rngs)]
     out: list[list[bytes]] = []
     for raw, enc, rng in zip(raws, encs, rngs):
-        pre = pre_boundaries(raw)
         s = raw.decode("utf-8", errors="surrogateescape")
         ords = np.fromiter(map(ord, s), dtype=np.int64, count=len(s))
         widths = np.where(ords < 0x80, 1,
@@ -131,12 +142,16 @@ def segment_v2_batch(
             b = int(cum[start])
             if 0 < b < len(raw):
                 bpe.add(b)
-        cuts: list[int] = []
-        for g in sorted(pre | bpe):
-            if g in pre and g in bpe:
-                cuts.append(g)
-            elif rng.random() < p:
-                cuts.append(g)
+        if pure_bpe:
+            cuts = sorted(bpe)
+        else:
+            pre = pre_boundaries(raw)
+            cuts = []
+            for g in sorted(pre | bpe):
+                if g in pre and g in bpe:
+                    cuts.append(g)
+                elif rng.random() < p:
+                    cuts.append(g)
         units: list[bytes] = []
         pos = 0
         for g in cuts + [len(raw)]:
