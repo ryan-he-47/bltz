@@ -39,6 +39,7 @@ def _process_file(args: tuple[int, str, str, int, dict[str, Any]]) -> dict[str, 
     p = float(seg_cfg["p_disagree"])
     tok_dir = str(seg_cfg["tok_dir"])
     pure = bool(seg_cfg.get("pure_bpe", False))
+    mode = str(seg_cfg.get("mode", "enhanced"))  # enhanced | pure_bpe | word
     writer = ShardWriter(out_dir, l_max)
     pf = pq.ParquetFile(parquet_path)
     n_docs = 0
@@ -51,7 +52,13 @@ def _process_file(args: tuple[int, str, str, int, dict[str, Any]]) -> dict[str, 
         raws = [texts[i].encode("utf-8") for i in range(take)]
         rngs = [random.Random(20260918 + file_idx * 100_000_000 + n_docs + i)
                 for i in range(take)]
-        for units in segment_v2_batch(raws, rngs, tok_dir, p=p, l_max=l_max, pure_bpe=pure):
+        if mode == "word":
+            from bltz.segment_v2 import segment_word
+            unit_lists = [segment_word(r, tok_dir, l_max=l_max) for r in raws]
+        else:
+            unit_lists = segment_v2_batch(raws, rngs, tok_dir, p=p, l_max=l_max,
+                                          pure_bpe=pure)
+        for units in unit_lists:
             if units:
                 writer.add_document_units(units)
             n_docs += 1
@@ -61,9 +68,11 @@ def _process_file(args: tuple[int, str, str, int, dict[str, Any]]) -> dict[str, 
             print(f"  [shard-{file_idx:05d}] {n_docs} docs ({rate:.0f} docs/s{eta}), "
                   f"{writer.n_units/1e6:.1f}M units, {time.time()-t0:.0f}s", flush=True)
     meta = writer.close({
-        "type": "pure_bpe" if pure else "enhanced_bpe", "p_disagree": 0.0 if pure else p,
+        "type": mode if mode == "word" else ("pure_bpe" if pure else "enhanced_bpe"),
+        "p_disagree": 0.0 if (pure or mode == "word") else p,
         "tokenizer": "Qwen3.5-2B",
-        "l_max": l_max, "baked_seed": None if pure else 20260918,
+        "l_max": l_max,
+        "baked_seed": None if (pure or mode == "word") else 20260918,
     })
     meta["file_idx"] = file_idx
     meta["sec"] = round(time.time() - t0, 1)

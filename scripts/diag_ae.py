@@ -45,6 +45,10 @@ def main() -> None:
     path = sys.argv[1]
     state = torch.load(path, map_location="cpu", weights_only=False)
     cfg = Cfg(state["cfg"])
+    # --cache override (2026-09-29: docstring promised it but it was never
+    # parsed — ckpts trained on the cluster carry /gpfs1 paths in their cfg)
+    if "--cache" in sys.argv:
+        cfg.data.cache_dir = sys.argv[sys.argv.index("--cache") + 1]
     model = ByteStringAE(cfg)
     model.load_state_dict(state["model"])
     model = model.to(DEV).eval()
