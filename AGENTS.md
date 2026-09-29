@@ -18,6 +18,10 @@
   linear GMM 头;密度读出。
 - **word-AE 2.5B 长训验收通过**(593265,best@105000;六项协议全面超
   基线,详见 docs/36 §4);现行 AE = ae_48_256_word_full。
+- **正式训练在途(594129 frozen / 594130 learnable)**:word 臂 +
+  在线核验回退(bltz/verify.py,EM+熵双判据)+ 双臂 batch 36 对齐,
+  1.25B units(1B const+0.25B decay WSD,LR 4e-4),67832 步,
+  预计 9-14h;可学习臂=AE 同构镜像去瓶颈(proj+LN),只差梯度流+瓶颈。
 - 测试 15 个全绿;HF token 在 $SCRATCH/hf_cache/token(600,工作区禁存)。
 
 ## 历史状态快照(2026-09-24 及以前,存档)

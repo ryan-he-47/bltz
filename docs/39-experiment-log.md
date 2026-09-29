@@ -47,3 +47,9 @@
 
 22. **AE 熵-长度曲线 + 熵门控可行性**(09-29,用户补测,服务"长 patch 核验+BPE 回退"策略) | 脚本 temp/ae_len_entropy.py,日志 checkpoints/ae_len_entropy.log,图 viz/ae_len_entropy.png | 结果:**熵崖与 EM 崖同址**(full2.5B L≤14 熵≤0.024 bits,L15 起陡升);**熵→失败 AUROC 0.998 全体 / 0.997 长桶内**(非长度代理);H|fail/H|ok 各桶 10-1000×;纯长度闸门漏短桶符号 run 失败(L*=12 捕 72.8%);**EM 核验与熵核验同价**(并行 FiLM 解码器,单次前向);回退率预估 ~0.5-1% | 策略待用户拍板,未动代码
 23. **回退率全量实测**(09-29,全 shard 1.886 亿 occurrence 加权,无采样) | 脚本 temp/ae_fallback_rate.py,日志 checkpoints/ae_fallback_rate.log,样例 ae_fallback_examples.txt | **flag 率 0.115% @TH=0.2**(EM 失败 0.074% + 脆弱正确 0.042%;TH 0.1-0.5 间 0.09-0.14% 不敏感);**膨胀 +0.53%**(512 窗字节容量 -0.53%);**重切件通过率差**(裸 BPE 58.6% / word 风 l_cap8 39.3%——整词训练的 AE 对词片段 OOD,回退实际靠地板);**单字节地板破 UTF-8**(108/191 失败=裸 continuation byte,地板须改单字符);失败成分=罕见长英文词+非 ASCII(西里尔/CJK);双判据不对称:脆弱正确件被拆可能变得更差,熵旗标的真实价值在生成期鲁棒性 | 结论:上线可行,地板改单字符,残留 exotic 字符策略(保留-as-is vs 掩码)待定
+
+## 正式训练(09-29 晚发射)
+
+24. **在线核验回退机制落地**(用户拍板:在线做不碰缓存) | bltz/verify.py:EM+熵(>0.2bits)双判据皆重切(用户:"不能产生质量好的嵌入向量,应当重切");BPE 重切→再核验→**字符安全 ≤3B 地板**(用户:"降级到2~3字节短片让模型慢慢拼");非 ASCII 噪音搁置(待多语言语料);超 l_max 单位自动旗标;dict 缓存(occurrence 重复 133×,稳态 GPU 成本~0) | test_verify_fallback 入套件(16 全绿)
+25. **可学习编码器严谨对照规格落地**(用户拍板) | ByteLayerEncoder 重写=**AE 编码器 1:1 镜像**(byte+pos 拼接→in_proj→同层数自注意力→AttnPool 池化)仅去瓶颈(out_norm+out_proj→48 换成 proj→768+LN);梯度联通只服务骨干,目标仍由冻结 AE 提供;PMA→AttnPool 防 fp16 悬崖(589611) | 构造+梯度覆盖冒烟过(2.16M 参数,44/44 梯度联通,冻结 AE 零梯度)
+26. **batch-显存服务器实测 + 双臂发射(594129/594130)** | stingy/gpu-v100s-01 扫描(gpu_v100s 排队到次日,用户发现 stingy 空闲 V100;stingy 时限 5h 仅适合冒烟,正式 run 回 gpu_v100s) | 实测:frozen b64=25.25GiB/0.80s,learnable b36=27.22GiB/0.76s,斜率 0.370GiB/batch 与本地拟合一致;**吞吐 compute-bound 与 batch 无关**;用户拍板**双臂 batch 36 对齐**(消混淆);1.25B units(1B const+0.25B decay,WSD decay_frac 0.2,LR 4e-4 复用,warmup 1000),67832 步,frozen ~8.7h / learnable ~14.3h;ckpt_keep=4 轮转 | 验收:docs/38 协议(bpb 为主尺,跨臂同切分同 AE 可比)
