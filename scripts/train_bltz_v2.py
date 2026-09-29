@@ -147,6 +147,21 @@ def main() -> None:
 
     rng = random.Random(int(cfg.train.seed) + 7919 * rank)
 
+    # deterministic replay support (2026-09-30 病因分析): the batch rng stream
+    # must be re-aligned to the resume point, else a "replay" draws DIFFERENT
+    # windows and proves nothing. trainer resume loads weights/opt but the
+    # sampling stream is ours — advance it by start_step*batch draws.
+    _resume = str(cfg.train.get("resume", "") or "")
+    if _resume:
+        _st = torch.load(_resume, map_location="cpu", weights_only=False)
+        _start = int(_st["step"]) + 1
+        del _st
+        _nseq = reader.n_sequences(S)
+        for _ in range(_start * int(cfg.train.batch)):
+            rng.randrange(_nseq)
+        if rank == 0:
+            print(f"[replay] rng advanced {_start}*batch draws", flush=True)
+
     # online verify+resplit (train.verify.*): the frozen AE judges its own
     # units; failures are replaced by verified pieces. Deterministic given
     # (AE ckpt, tokenizer, thresholds) — pin all three per run.
