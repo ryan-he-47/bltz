@@ -181,7 +181,9 @@ def main() -> None:
         with torch.no_grad():
             for _ in range(GEN_STEPS):
                 bids, _, pmask = tensorize(cur_units, model.l_max, DEV)
-                h = model.backbone(model.backbone_input(bids.unsqueeze(0), pmask.unsqueeze(0)))[:, -1:]
+                lam_u = model.encode_units(bids.unsqueeze(0), pmask.unsqueeze(0))
+                x = torch.cat([model.bos.expand(1, 1, -1), lam_u], dim=1)
+                h = model.backbone(model.adapter(x))[:, -1:]
                 logit_pi, mu, _ = model.head.params(h)
                 lp = logit_pi[0, 0].float()
                 k3 = lp.topk(3).indices

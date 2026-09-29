@@ -205,7 +205,9 @@ def main() -> None:
                 with torch.no_grad():
                     for _ in range(48):
                         bids, _, pm = tensorize(cur_units, model.l_max, DEV)
-                        h = model.backbone(model.backbone_input(bids.unsqueeze(0), pm.unsqueeze(0)))[:, -1:]
+                        lam_u = model.encode_units(bids.unsqueeze(0), pm.unsqueeze(0))
+                        x = torch.cat([model.bos.expand(1, 1, -1), lam_u], dim=1)
+                        h = model.backbone(model.adapter(x))[:, -1:]
                         logit_pi, mu, sig = (t.float() for t in model.head.params(h))
                         w = gmm_scores(logit_pi[0, 0], mu[0, 0], sig[0, 0], V, V2)
                         j = int(w.argmax()) if tau <= 0 else int(torch.multinomial(F.softmax(w / tau, -1), 1))

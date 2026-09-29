@@ -32,7 +32,7 @@ see `docs/17`/`docs/17b` (closure episode) and `docs/18-restart-handoff.md`
 | `docs/04-stage0-1-smoke.md` | 管线冒烟报告(过拟合/真实短跑/θ_stop 机制) |
 | `docs/05-diag-d1-v2.md` | D-1 诊断判据修订(v2 分层)与首读 |
 | `docs/06-twin-calibration.md` | twin 本地标定(batch 8 / RoPE 修复 / gemm-bound / 预算选项) |
-| `docs/07-code-architecture.md` | 代码架构与运维手册(数据结构/命令/坑位/性能事实) |
+| `docs/07-code-architecture.md` | **代码架构(现行版)**(模块地图/数据结构/训练入口/生成铁律/数值稳定;v1 历史注记,2026-09-29 重写) |
 | `docs/08-runbook-stage1.md` | 明日 runbook:全量缓存 + twin 双臂(无损起跑指南) |
 | `docs/09-roadmap.md` | 长期路线图:Stage 3/4 规格、开放超参、论文定位备忘 |
 | `docs/10-poc-diag-20k.md` | POC 诊断档案:首个 20k 模型七视角定性结果、D11 停止规则、开放问题(2026-09-13) |
@@ -56,11 +56,16 @@ see `docs/17`/`docs/17b` (closure episode) and `docs/18-restart-handoff.md`
 | `docs/28-phase-summary.md` | **阶段性总结**(长程结果分析/代码改动/上下文悬置信息/下一步建议;退火权重诊断全场最佳,2026-09-16) |
 | `docs/29-gpu-node-06-diagnosis.md` | gpu-v100s-06 诊断:驱动层整机卡死非坏卡(2026-09-15;exclude 规则维持) |
 | `docs/30-experiment-mtp1.md` | MTP 监督深度对照实验(n_patches_ahead 3→1,60k;子词级 MTP 是否损害小模型学习) |
-| `docs/31-design-v2-ae-mdn.md` | **v2 设计**(2026-09-17 用户裁决 H1 不成立后转向):字节串自编码器 + 梯度硬切断 + MDN/GMM 骨干 + 增强 BPE + EOS 终止符 |
+| `docs/31-design-v2-ae-mdn.md` | **v2 设计(现行版)**(设计三支柱/现行全貌/相对起草稿 12 条更新/决策史;2026-09-29 重组) |
 | `docs/32-construction-plan-v2.md` | v2 施工计划(AE 本机先行 → 缓存 v2 → 骨干+MDN → frozen/joint 双臂 POC;待审阅动工) |
 | `docs/33-lit-review-v2/` | v2 架构组件学术生态位调研(并行会话产物,2026-09-21) |
-| `docs/34-evaluation-protocols.md` | **评估协议清单**(七层协议×跑法×诊断目标×坑×覆盖图/缺口,2026-09-22) |
+| `docs/34-evaluation-protocols.md` | 评估协议清单(**已被 docs/38 取代**,保留作历史清单) |
 | `docs/35-phase-summary-v2.md` | **v2 阶段性总结**(转向史/实验结论/代码变更/悬置信息;压缩上下文入口,2026-09-22) |
+| `docs/36-word-ae-eval-protocol.md` | word-AE 基线结果(协议部分并入 38;零次桶 99.29% 等基线表,2026-09-29) |
+| `docs/37-phase-summary-v3.md` | **v3 阶段总结**(三废除/新主轴/架构摘要/悬置资产/教训总表;当前压缩上下文入口,2026-09-29) |
+| `docs/38-eval-reference.md` | **评估协议唯一权威**(方法论铁律+六层协议+工具 CLI,自包含,2026-09-29) |
+| `docs/39-experiment-log.md` | **实验日志压缩索引**(v2 时代 21 个实验的动机/配置/结果,详情指 docs/32,2026-09-29) |
+| `docs/40-next-steps.md` | **短期计划**(长训 AE 验收→可学习编码器严谨对照→scaling 原生+1B 微调,2026-09-29) |
 | `docs/blt_research/ByteField用户立场归档.md` | 用户立场:工作定位、学术生态位、设计哲学 |
 | `reference_projects/` | 参考:BLT / Fast BLT / HAT / DMBP 论文文本版、simple_point_cloud(架构模板)、MoB_Head(问题定义) |
 
