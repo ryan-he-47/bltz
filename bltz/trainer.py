@@ -53,11 +53,12 @@ class CosSched:
 
 
 def grad_norm(model: torch.nn.Module) -> float:
-    total = 0.0
-    for p in model.parameters():
-        if p.grad is not None:
-            total += p.grad.detach().float().pow(2).sum().item()
-    return total**0.5
+    grads = [p.grad for p in model.parameters() if p.grad is not None]
+    if not grads:
+        return 0.0
+    # foreach single-sync (2026-09-29 prof finding: ~200 .item() roundtrips/step
+    # on slow server cores cost real wall time)
+    return float(torch.norm(torch.stack(torch._foreach_norm(grads))))
 
 
 def _state_model(m: torch.nn.Module) -> torch.nn.Module:
@@ -224,26 +225,41 @@ def train(
 
     step = start_step - 1  # stays bound for the interrupt paths even pre-loop
     stopped: str | None = None
+    # phase profiling (BLTZ_PROF=1, default off — zero behavior change):
+    # per-step wall time split batch/fwd/bwd/gn/opt/io, printed every log_every.
+    prof = os.environ.get("BLTZ_PROF", "") == "1"
+    pt = {"batch": 0.0, "fwd": 0.0, "bwd": 0.0, "gn": 0.0, "opt": 0.0, "io": 0.0}
+    pn = 0
     try:
         for step in range(start_step, tcfg.steps):
             why = stop_requested()
             if why is not None:
                 stopped = why
                 break
+            _t = time.time() if prof else 0.0
             batch = {k: v.to(device) for k, v in batch_fn().items()}
+            if prof:
+                pt["batch"] += time.time() - _t; _t = time.time()
             for g in opt.param_groups:
                 g["lr"] = sched(step)
             with torch.autocast(
                 "cuda", dtype=torch.bfloat16 if use_bf16 else torch.float16
             ):
                 loss = loss_fn(model, batch, cfg)
+            if prof:
+                pt["fwd"] += time.time() - _t; _t = time.time()
             opt.zero_grad(set_to_none=True)
             if use_bf16:
                 loss.backward()
             else:
                 scaler.scale(loss).backward()
                 scaler.unscale_(opt)  # guard/clip must see UNSCALED grad norms
+            if prof:
+                torch.cuda.synchronize()
+                pt["bwd"] += time.time() - _t; _t = time.time()
             gn = grad_norm(model)
+            if prof:
+                pt["gn"] += time.time() - _t; _t = time.time()
 
             median = sorted(med_hist)[len(med_hist) // 2] if len(med_hist) >= 50 else None
             thresh = max(tcfg.spike_skip * median, 2000.0) if median is not None else float("inf")
@@ -268,6 +284,9 @@ def train(
             else:
                 scaler.step(opt)
                 scaler.update()
+            if prof:
+                torch.cuda.synchronize()
+                pt["opt"] += time.time() - _t; _t = time.time()
 
             lval = float(loss.item())
             last_loss = lval
@@ -278,7 +297,20 @@ def train(
                         {"model": _state_model(model).state_dict(), "cfg": cfg.to_dict(), "step": step, "loss": lval},
                         os.path.join(tcfg.ckpt_dir, "best.pt"),
                     )
+            if prof:
+                pt["io"] += time.time() - _t
+                pn += 1
             if step % tcfg.log_every == 0 or step == tcfg.steps - 1:
+                if prof and pn:
+                    tot = sum(pt.values())
+                    print(f"[prof] step {step}: batch {pt['batch']/pn:.3f} "
+                          f"fwd {pt['fwd']/pn:.3f} bwd {pt['bwd']/pn:.3f} "
+                          f"gn {pt['gn']/pn:.3f} opt {pt['opt']/pn:.3f} "
+                          f"io {pt['io']/pn:.3f} | sum {tot/pn:.3f}s/step",
+                          flush=True)
+                    for k in pt:
+                        pt[k] = 0.0
+                    pn = 0
                 log({
                     "step": step,
                     "loss": round(lval, 4),
