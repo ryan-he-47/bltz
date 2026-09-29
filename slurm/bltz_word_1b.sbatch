@@ -1,8 +1,9 @@
 #!/bin/bash
 # v2 word-arm FORMAL run, FROZEN control (2026-09-29 拍板): word 臂缓存 +
 # ae_48_256_word_full + linear MDN + 在线核验回退. 1B const + 0.25B decay
-# (WSD decay_frac 0.2), batch 64 (V100 smoke: 25.25GiB peak, 6.75G headroom),
-# 1.25B units = 38150 steps @ ~0.8s/step ~ 8.5h.
+# (WSD decay_frac 0.2), batch 36 双臂对齐 (用户拍板; smoke 实测斜率
+# 0.370GiB/batch -> ~15GiB 峰值, 余量充裕), 1.25B units = 67832 steps
+# @ ~0.46s/step ~ 8.7h.
 #   sbatch slurm/bltz_word_1b.sbatch
 #SBATCH --job-name=bltz_word_1b
 #SBATCH --partition=gpu_v100s
@@ -31,8 +32,8 @@ $PY -u scripts/train_bltz_v2.py configs/v2_word.yaml \
   --set train.ae_ckpt="$SCRATCH/ckpts/ae_48_256_word_full/best.pt" \
   --set train.verify.tok_dir="$TOK" \
   --set train.bf16=false \
-  --set train.batch=64 \
-  --set train.steps=38150 \
+  --set train.batch=36 \
+  --set train.steps=67832 \
   --set train.ckpt_keep=4 \
   --set train.ckpt_dir="$SCRATCH/ckpts/v2_word_1b"
 
