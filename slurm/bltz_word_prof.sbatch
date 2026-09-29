@@ -9,7 +9,7 @@
 #SBATCH --nodelist=gpu-v100s-01
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --mem=96G
 #SBATCH --time=0-01:00:00
 #SBATCH --output=/gpfs1/home/yihe47/bltz/logs/word_prof_%j.out
 
