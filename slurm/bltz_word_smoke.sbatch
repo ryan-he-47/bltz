@@ -4,8 +4,8 @@
 # Decides per-arm batch under the 4-6GB headroom rule.
 #   sbatch slurm/bltz_word_smoke.sbatch
 #SBATCH --job-name=bltz_word_smoke
-#SBATCH --partition=gpu_v100s
-#SBATCH --exclude=gpu-v100s-06
+#SBATCH --partition=stingy
+#SBATCH --nodelist=gpu-v100s-01
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
