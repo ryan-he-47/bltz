@@ -60,9 +60,9 @@ see `docs/17`/`docs/17b` (closure episode) and `docs/18-restart-handoff.md`
 | `docs/32-construction-plan-v2.md` | v2 施工计划(AE 本机先行 → 缓存 v2 → 骨干+MDN → frozen/joint 双臂 POC;待审阅动工) |
 | `docs/33-lit-review-v2/` | v2 架构组件学术生态位调研(并行会话产物,2026-09-21) |
 | `docs/34-evaluation-protocols.md` | 评估协议清单(**已被 docs/38 取代**,保留作历史清单) |
-| `docs/35-phase-summary-v2.md` | **v2 阶段性总结**(转向史/实验结论/代码变更/悬置信息;压缩上下文入口,2026-09-22) |
+| `docs/35-phase-summary-v2.md` | **v2 阶段总结·第一辑**(转向史/实验结论/代码变更/悬置信息,2026-09-22) |
 | `docs/36-word-ae-eval-protocol.md` | word-AE 基线结果(协议部分并入 38;零次桶 99.29% 等基线表,2026-09-29) |
-| `docs/37-phase-summary-v3.md` | **v3 阶段总结**(三废除/新主轴/架构摘要/悬置资产/教训总表;当前压缩上下文入口,2026-09-29) |
+| `docs/37-phase-summary-v2b.md` | **v2 阶段总结·第二辑**(三废除/新主轴/架构摘要/悬置资产/教训总表;当前压缩上下文入口,2026-09-29) |
 | `docs/38-eval-reference.md` | **评估协议唯一权威**(方法论铁律+六层协议+工具 CLI,自包含,2026-09-29) |
 | `docs/39-experiment-log.md` | **实验日志压缩索引**(v2 时代 21 个实验的动机/配置/结果,详情指 docs/32,2026-09-29) |
 | `docs/40-next-steps.md` | **短期计划**(长训 AE 验收→可学习编码器严谨对照→scaling 原生+1B 微调,2026-09-29) |
