@@ -228,6 +228,9 @@ bltz(byte-aware learnable tokenizer,原名 ByteField,致敬 BLT):词表 free 的
   该节点加永久僵尸**;只在必要时探、探完 scancel。另:`timeout` 杀不掉 D 状态,所以
   兜住挂死调用必须走"后台化 + 固定窗口回收"设计,不能靠 `timeout`(两个坑见 `docs/28` §3)。
 - 训练守卫:spike_skip = max(10×running median, 2000);Adam β2=0.95;不许擅自改。
+- **冒烟/基准的步速计时必须包含完整批构建路径**(2026-09-29 教训:
+  smoke_scale 把批构建排除在计时外,核验路径的每窗 GPU 往返(36×6ms)
+  上了生产才暴露;共享节点 CPU 满载会放大 python 重数据路径)。
 - LR 调度 house rule:可续训/探底 run 默认 **WSD**;weight-only 续训重启的 peak
   不得超过上一 run 的结束 LR。
 - **POC 阶段方法论(2026-09-13 用户拍板,D10)**:看趋势、做定性分析、快速迭代;
