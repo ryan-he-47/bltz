@@ -49,9 +49,9 @@ def build_batch(reader: ShardReader, verifier, idx: list[int], S: int,
     if verifier is None:
         return reader.make_batch(idx, S, augment=False)
     seqs = []
-    for gi in idx:
-        units = reader.sequence_units(gi, S)
-        units = verifier.process(units)
+    wins = [reader.sequence_units(gi, S) for gi in idx]
+    wins = verifier.process_batch(wins)  # one batched GPU roundtrip
+    for gi, units in zip(idx, wins):
         if len(units) < S:  # cannot happen (splits only grow) — belt & braces
             units = reader.sequence_units(gi, S)
         units = units[:S]

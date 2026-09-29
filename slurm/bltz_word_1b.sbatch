@@ -9,7 +9,7 @@
 #SBATCH --partition=gpu_v100s
 #SBATCH --exclude=gpu-v100s-06
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=16
 #SBATCH --mem=96G
 #SBATCH --time=1-12:00:00
 #SBATCH --output=/gpfs1/home/yihe47/bltz/logs/word_1b_%j.out

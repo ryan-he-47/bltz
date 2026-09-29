@@ -150,61 +150,77 @@ class VerifyResplitter:
         return out
 
     # ---- main entry --------------------------------------------------------
-    def process(self, units: list[bytes]) -> list[bytes]:
-        """Verify + resplit one window of units. Byte-conserving:
-        b''.join(out) == b''.join(units). Count only grows (splits)."""
-        self._calls += 1
-        self.n_in += len(units)
-        miss = [u for u in dict.fromkeys(units) if u not in self._cache]
-        if miss:
-            em_ok, ent = self._verify(miss)
-            fails = [u for u, ok, e in zip(miss, em_ok, ent)
-                     if (not ok) or e > self.ent_thresh]
-            self.n_flag += len(fails)
-            for u, ok, e in zip(miss, em_ok, ent):
+    def _ensure(self, misses: list[bytes]) -> None:
+        """Verify + cascade for cache misses, ONE GPU roundtrip per call
+        (2026-09-29 slowdown fix: per-window roundtrips cost ~6ms each;
+        batching across the whole training batch cuts 36 -> 1)."""
+        if not misses:
+            return
+        em_ok, ent = self._verify(misses)
+        fails = [u for u, ok, e in zip(misses, em_ok, ent)
+                 if (not ok) or e > self.ent_thresh]
+        self.n_flag += len(fails)
+        for u, ok, e in zip(misses, em_ok, ent):
+            if ok and e <= self.ent_thresh:
+                self._cache[u] = (u,)
+        if not fails:
+            return
+        pieces = list({p for u in fails for p in self._bpe_split(u)})
+        pieces = [p for p in pieces if p not in self._cache]
+        if pieces:
+            p_ok, p_ent = self._verify(pieces)
+            self.n_piece += len(pieces)
+            floor: list[bytes] = []
+            for p, ok, e in zip(pieces, p_ok, p_ent):
                 if ok and e <= self.ent_thresh:
-                    self._cache[u] = (u,)
-            if fails:
-                pieces = list({p for u in fails for p in self._bpe_split(u)})
-                pieces = [p for p in pieces if p not in self._cache]
-                if pieces:
-                    p_ok, p_ent = self._verify(pieces)
-                    self.n_piece += len(pieces)
-                    floor: list[bytes] = []
-                    for p, ok, e in zip(pieces, p_ok, p_ent):
-                        if ok and e <= self.ent_thresh:
-                            self._cache[p] = (p,)
-                        else:
-                            floor.extend(_char_chunks(p, self.floor_bytes))
-                    floor = [f for f in dict.fromkeys(floor) if f not in self._cache]
-                    if floor:
-                        f_ok, f_ent = self._verify(floor)
-                        self.n_floor += len(floor)
-                        self.n_floor_fail += int(sum(
-                            1 for ok, e in zip(f_ok, f_ent)
-                            if (not ok) or e > self.ent_thresh))
-                        for f in floor:
-                            self._cache[f] = (f,)  # accepted unconditionally
-                for u in fails:
-                    finals: list[bytes] = []
-                    for p in self._bpe_split(u):
-                        if p in self._cache and self._cache[p] == (p,):
-                            finals.append(p)
-                        else:
-                            finals.extend(
-                                c for c in _char_chunks(p, self.floor_bytes))
-                    self._cache[u] = tuple(finals)
-        out: list[bytes] = []
-        for u in units:
-            out.extend(self._cache[u])
-        self.n_out += len(out)
-        if self.log_every and self._calls % self.log_every == 0:
+                    self._cache[p] = (p,)
+                else:
+                    floor.extend(_char_chunks(p, self.floor_bytes))
+            floor = [f for f in dict.fromkeys(floor) if f not in self._cache]
+            if floor:
+                f_ok, f_ent = self._verify(floor)
+                self.n_floor += len(floor)
+                self.n_floor_fail += int(sum(
+                    1 for ok, e in zip(f_ok, f_ent)
+                    if (not ok) or e > self.ent_thresh))
+                for f in floor:
+                    self._cache[f] = (f,)  # accepted unconditionally
+        for u in fails:
+            finals: list[bytes] = []
+            for p in self._bpe_split(u):
+                if p in self._cache and self._cache[p] == (p,):
+                    finals.append(p)
+                else:
+                    finals.extend(_char_chunks(p, self.floor_bytes))
+            self._cache[u] = tuple(finals)
+
+    def process_batch(self, windows: list[list[bytes]]) -> list[list[bytes]]:
+        """Verify + resplit a whole batch of windows. Byte-conserving per
+        window; counts only grow (splits)."""
+        self._calls += len(windows)
+        self.n_in += sum(len(w) for w in windows)
+        misses = [u for w in windows for u in dict.fromkeys(w)
+                  if u not in self._cache]
+        self._ensure(list(dict.fromkeys(misses)))
+        out: list[list[bytes]] = []
+        for w in windows:
+            o: list[bytes] = []
+            for u in w:
+                o.extend(self._cache[u])
+            out.append(o)
+            self.n_out += len(o)
+        if self.log_every and self._calls // self.log_every != (
+                self._calls - len(windows)) // self.log_every:
             print(f"[verify] calls {self._calls} | units {self.n_in} "
                   f"flag {self.n_flag} ({self.n_flag / max(self.n_in, 1):.4%}) "
                   f"| in->out x{self.n_out / max(self.n_in, 1):.4f} "
                   f"| cache {len(self._cache)} | verify rows {self.n_verify_rows} "
                   f"| floor {self.n_floor} (fail {self.n_floor_fail})", flush=True)
         return out
+
+    def process(self, units: list[bytes]) -> list[bytes]:
+        """Single-window wrapper (kept for tests/diagnostics)."""
+        return self.process_batch([units])[0]
 
 
 def fit_window(units: list[bytes], S: int) -> list[bytes]:
