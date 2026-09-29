@@ -25,6 +25,11 @@
 ## 2. 数据结构
 
 - **v2 缓存**:shard-XXXXX/{bytes.npy(u8), unit_len.npy(u8), unit_flag.npy(doc 首单位=1), meta.json(切分器指纹)}. 单位=字节串 ≤l_max(32),单位间无 padding,S=512/4096 切序列。
+- **读取模式**(2026-09-29/30):`ShardReader(preload=True)`=全量入 RAM
+  (GPFS mmap 页错误曾是 batch 相位 1.6s 主因);`ShardRotator`=块级轮换
+  (驻留 K shard+后台预载换下一块,数据序=粗粒度块随机,下一次训练起
+  启用,`data.rotate_shards:{resident,every}`)。GPFS 上的 mmap 随机读
+  是历史坑,新代码路径默认避开。
 - **batch 字典**:byte_ids (B,S,L)、pad_mask (B,S,L) True=pad。
 - **ckpt**:{"model": raw BltzLMv2/ByteStringAE state_dict(无包装前缀), "cfg": 全配置, "step", [opt/scaler/med_hist/...]}。AE best.pt 另含 val_loss。
 - **评测 pkl**(`dump_eval_pkl.py`):freq_units(131k)/val_units(2k)/probe_pool/distinct_seq_units(1000×S)/n_seq/total_units。
