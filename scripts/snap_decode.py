@@ -90,6 +90,7 @@ def main() -> None:
     topn = int(sys.argv[sys.argv.index("--topn") + 1]) if "--topn" in sys.argv else 100_000
     do_gen = "--gen" in sys.argv
     do_ppl = "--ppl" in sys.argv
+    do_mode = "--mode" in sys.argv or do_ppl  # density-functional twin of snap
     nseqs = int(sys.argv[sys.argv.index("--nseqs") + 1]) if "--nseqs" in sys.argv \
         else (64 if do_ppl else 16)
 
@@ -105,8 +106,8 @@ def main() -> None:
     table_set = set(table)
 
     seqs = src["distinct_seq_units"][:nseqs]
-    em = {"dec": 0, "cos": 0, "gmm": 0}
-    ed2 = {"dec": 0, "cos": 0, "gmm": 0}
+    em = {"dec": 0, "cos": 0, "gmm": 0, "mode": 0}
+    ed2 = {"dec": 0, "cos": 0, "gmm": 0, "mode": 0}
     cov = 0
     tot = 0
     # --ppl accumulators: covered positions vs OOV (uniform-over-table backoff).
@@ -159,11 +160,17 @@ def main() -> None:
                     e = lev(pred, true_b)
                     em[name] += int(e == 0)
                     ed2[name] += int(e <= 2)
+                if do_mode:
+                    mv = model.head.mode(h[:, i : i + 1])[0, 0]
+                    mb = bytes(model.ae.decode(mv.reshape(1, -1))[0])
+                    e = lev(mb, true_b)
+                    em["mode"] += int(e == 0)
+                    ed2["mode"] += int(e <= 2)
             print(f"  [heartbeat] eval seq {si + 1}/{len(seqs)} "
                   f"({tot / max(time.time() - t0, 1e-9):.0f} pos/s)", flush=True)
     print(f"\ncoverage {cov / tot:.4f} | EM: dec {em['dec'] / tot:.4f} cos {em['cos'] / tot:.4f} "
-          f"gmm {em['gmm'] / tot:.4f} | edit<=2: dec {ed2['dec'] / tot:.4f} cos {ed2['cos'] / tot:.4f} "
-          f"gmm {ed2['gmm'] / tot:.4f}", flush=True)
+          f"gmm {em['gmm'] / tot:.4f} mode {em['mode'] / tot:.4f} | edit<=2: dec {ed2['dec'] / tot:.4f} "
+          f"cos {ed2['cos'] / tot:.4f} gmm {ed2['gmm'] / tot:.4f} mode {ed2['mode'] / tot:.4f}", flush=True)
     if do_ppl:
         log2e = float(np.log2(np.e))
         n_pos_cal = sum(1 for s_ in seqs[: len(seqs) // 2] for _ in s_[1:-1])
