@@ -104,6 +104,7 @@ def train(
     history: list[dict[str, Any]] = []
     med_hist: deque[float] = deque(maxlen=1000)
     best = float("inf")
+    pending_best = False
     last_loss = float("nan")
     skips = 0
     consec_skips = 0
@@ -292,15 +293,21 @@ def train(
             last_loss = lval
             if lval < best:
                 best = lval
-                if is_rank0:
-                    torch.save(
-                        {"model": _state_model(model).state_dict(), "cfg": cfg.to_dict(), "step": step, "loss": lval},
-                        os.path.join(tcfg.ckpt_dir, "best.pt"),
-                    )
+                pending_best = True  # flushed at log boundary (see below)
             if prof:
                 pt["io"] += time.time() - _t
                 pn += 1
             if step % tcfg.log_every == 0 or step == tcfg.steps - 1:
+                # best.pt flush throttled to log boundaries (2026-09-29 prof
+                # finding: saving 0.5GB to GPFS on EVERY improving step cost
+                # 0.34-0.56s/step in the early phase — best is an artifact,
+                # 50-step granularity loses nothing)
+                if pending_best and is_rank0:
+                    torch.save(
+                        {"model": _state_model(model).state_dict(), "cfg": cfg.to_dict(), "step": step, "loss": best},
+                        os.path.join(tcfg.ckpt_dir, "best.pt"),
+                    )
+                    pending_best = False
                 if prof and pn:
                     tot = sum(pt.values())
                     print(f"[prof] step {step}: batch {pt['batch']/pn:.3f} "
@@ -332,6 +339,11 @@ def train(
         # model/opt are always a consistent pair here: mid-step state is either
         # both pre-step or both post-step, and we label with the last step whose
         # update is guaranteed fully applied -> resume at most duplicates 1 step.
+        if pending_best and is_rank0:
+            torch.save(
+                {"model": _state_model(model).state_dict(), "cfg": cfg.to_dict(), "step": max(step, start_step), "loss": best},
+                os.path.join(tcfg.ckpt_dir, "best.pt"),
+            )
         if step > start_step:
             save_full(step - 1)
         if os.path.exists(stop_path):
@@ -347,6 +359,11 @@ def train(
         })
         return history
 
+    if pending_best and is_rank0:
+        torch.save(
+            {"model": _state_model(model).state_dict(), "cfg": cfg.to_dict(), "step": tcfg.steps - 1, "loss": best},
+            os.path.join(tcfg.ckpt_dir, "best.pt"),
+        )
     save_full(tcfg.steps - 1)
     torch.save(
         {"model": model.state_dict(), "cfg": cfg.to_dict(), "step": tcfg.steps, "loss": last_loss},

@@ -77,7 +77,7 @@ class ShardWriter:
 class ShardReader:
     """Read-time sequence slicer + batch builder over one or more shards."""
 
-    def __init__(self, cache_dir: str):
+    def __init__(self, cache_dir: str, preload: bool = False):
         self.cache_dir = cache_dir
         self.shards: list[dict[str, Any]] = []
         for name in sorted(os.listdir(cache_dir)):
@@ -86,11 +86,16 @@ class ShardReader:
                 continue
             with open(os.path.join(d, "meta.json"), encoding="utf-8") as f:
                 meta = json.load(f)
+            # preload (2026-09-29 prof finding): mmap over GPFS costs ~10ms per
+            # page fault and dominates the batch-build path (~1.6s/step at
+            # batch 36). Loading the arrays into RAM once (sequential read)
+            # kills per-step IO entirely — request enough --mem.
+            mm = None if preload else "r"
             self.shards.append({
                 "dir": d,
-                "bytes": np.load(os.path.join(d, "bytes.npy"), mmap_mode="r"),
-                "unit_len": np.load(os.path.join(d, "unit_len.npy"), mmap_mode="r"),
-                "unit_flag": np.load(os.path.join(d, "unit_flag.npy"), mmap_mode="r"),
+                "bytes": np.load(os.path.join(d, "bytes.npy"), mmap_mode=mm),
+                "unit_len": np.load(os.path.join(d, "unit_len.npy"), mmap_mode=mm),
+                "unit_flag": np.load(os.path.join(d, "unit_flag.npy"), mmap_mode=mm),
                 "meta": meta,
             })
         if not self.shards:

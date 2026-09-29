@@ -101,7 +101,8 @@ def main() -> None:
               f"math={torch.backends.cuda.math_sdp_enabled()} "
               f"cap={cap} (flash needs sm80+)", flush=True)
 
-    reader = ShardReader(cfg.data.cache_dir)
+    reader = ShardReader(cfg.data.cache_dir,
+                         preload=bool(cfg.data.get("preload", False)))
     S = int(cfg.data.n_patches)
     n_seq = reader.n_sequences(S)
     if rank == 0:
