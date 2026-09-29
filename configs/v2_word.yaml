@@ -22,8 +22,9 @@ model:
   input_mode: frozen               # learnable 臂: --set model.input_mode=learnable
 train:
   ae_ckpt: checkpoints/ae_48_256_word_full/best.pt
-  steps: 38200                     # batch 64 占位; 实测后按 1.25e9/(B*512) 定稿
-  batch: 64                        # 占位; 按 smoke 显存实测定稿
+  steps: 38150                     # 1.25B units @ batch64*512 (1B const + 0.25B decay)
+  batch: 64                        # V100 smoke 实测: 25.25GiB 峰值, 6.75G 余量
+                                   # (learnable 臂 36: 27.22GiB, 4.78G 余量)
   lr: 4.0e-4                       # 复用 v2.yaml 峰值
   warmup: 1000
   decay_frac: 0.2                  # 0.25B 衰减段
