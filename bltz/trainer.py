@@ -98,8 +98,14 @@ def train(
 
     # precision: bf16 (sm89+, no scaler) | fp16 + GradScaler (V100 path, MoB
     # house rule — sm70 has no bf16). train.bf16=false selects fp16.
+    # fp16_init_scale (2026-09-30 可学习臂事故): 默认 65536 在锐化的密度模型
+    # 上反向必溢出(gn=Infinity 级联);稳定水位实测 ~1024,正式 run 显式压低。
     use_bf16 = bool(tcfg.bf16)
-    scaler = torch.amp.GradScaler("cuda", enabled=not use_bf16)
+    scaler = torch.amp.GradScaler(
+        "cuda", enabled=not use_bf16,
+        init_scale=float(tcfg.get("fp16_init_scale", 65536.0)),
+        growth_interval=int(tcfg.get("fp16_growth_interval", 2000)),
+    )
 
     history: list[dict[str, Any]] = []
     med_hist: deque[float] = deque(maxlen=1000)
@@ -226,6 +232,11 @@ def train(
 
     step = start_step - 1  # stays bound for the interrupt paths even pre-loop
     stopped: str | None = None
+    # resume re-warmup (train.rewarmup, 2026-09-30 事故修复): weight-only
+    # resume resets Adam; fresh moments + full LR = destructive aggression.
+    # Ramp LR linearly over the first rewarmup steps from the resume point
+    # (peak still = sched(step) -> house rule peak<=parent end LR holds).
+    rewarm = int(tcfg.get("rewarmup", 0))
     # phase profiling (BLTZ_PROF=1, default off — zero behavior change):
     # per-step wall time split batch/fwd/bwd/gn/opt/io, printed every log_every.
     prof = os.environ.get("BLTZ_PROF", "") == "1"
@@ -243,6 +254,9 @@ def train(
                 pt["batch"] += time.time() - _t; _t = time.time()
             for g in opt.param_groups:
                 g["lr"] = sched(step)
+                if rewarm and step - start_step < rewarm:
+                    g["lr"] = min(g["lr"], float(tcfg.lr)
+                                        * (step - start_step + 1) / rewarm)
             with torch.autocast(
                 "cuda", dtype=torch.bfloat16 if use_bf16 else torch.float16
             ):

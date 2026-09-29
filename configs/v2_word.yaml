@@ -39,7 +39,9 @@ train:
   ckpt_dir: checkpoints/v2_word_1b
   log_every: 50
   ckpt_every: 250
-  milestone_every: 2000
+  milestone_every: 0               # 2026-09-30 用户拍板:正式 run 不留永久里程碑
+                                   # (硬盘额度);滚动 ckpt_keep 3 全态+best.pt 兜底;
+                                   # WSD 分支需求时显式加回
   verify:                          # 在线核验回退 (docs/39 #23; 缓存不动)
     enabled: true
     ent_thresh: 0.2                # bits; 实测 0.1-0.5 间 flag 率不敏感
