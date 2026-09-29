@@ -30,6 +30,7 @@ git pull --ff-only || echo "[word_1b_learnin] git pull failed, using existing ch
 $PY -u scripts/train_bltz_v2.py configs/v2_word.yaml \
   --set model.input_mode=learnable \
   --set data.cache_dir="$SCRATCH/data/fineweb10b_v2_word" \
+  --set data.preload=true \
   --set train.ae_ckpt="$SCRATCH/ckpts/ae_48_256_word_full/best.pt" \
   --set train.verify.tok_dir="$TOK" \
   --set train.bf16=false \

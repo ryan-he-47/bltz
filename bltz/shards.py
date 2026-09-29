@@ -17,6 +17,7 @@ import json
 import os
 import random
 from array import array
+from collections import deque
 from typing import Any
 
 import numpy as np
@@ -74,15 +75,108 @@ class ShardWriter:
         return meta
 
 
+def _load_shard(d: str, meta: dict, mm: str | None) -> dict[str, Any]:
+    return {
+        "dir": d,
+        "bytes": np.load(os.path.join(d, "bytes.npy"), mmap_mode=mm),
+        "unit_len": np.load(os.path.join(d, "unit_len.npy"), mmap_mode=mm),
+        "unit_flag": np.load(os.path.join(d, "unit_flag.npy"), mmap_mode=mm),
+        "meta": meta,
+    }
+
+
+class ShardRotator:
+    """Block-level rotation sampler (2026-09-30 用户拍板: 服务器积德).
+
+    Keeps `resident` shards in RAM (each ~3.5GB for the word cache) instead of
+    preloading the whole corpus; windows are drawn uniformly from the resident
+    set, and every `every` batch calls the oldest shard is retired and the
+    next one (random permutation, seeded) swapped in. The next shard is loaded
+    in a BACKGROUND THREAD right after each rotation, so the swap costs no
+    training time; IO per rotation = one sequential GPFS read.
+
+    Data-order note (拍板口径): coarse block-random instead of iid — a run
+    sees ~2 resident blocks at a time and cycles the full corpus across
+    rotations. reader interface = ShardReader over the resident subset.
+    """
+
+    def __init__(self, cache_dir: str, resident: int = 4, every: int = 2000,
+                 seed: int = 0):
+        import threading
+
+        self.cache_dir = cache_dir
+        self.every = int(every)
+        self.calls = 0
+        names = sorted(
+            n for n in os.listdir(cache_dir)
+            if os.path.isdir(os.path.join(cache_dir, n)) and n.startswith("shard-")
+        )
+        if len(names) < resident:
+            raise ValueError(f"cache has {len(names)} shards < resident {resident}")
+        self.perm = random.Random(seed).sample(names, len(names))
+        first = self.perm[:resident]
+        self.reader = ShardReader(cache_dir, preload=True, only=first)
+        self.names: deque[str] = deque(first)
+        self.pos = resident  # next position in perm to bring in
+        self._threading = threading
+        self._bg: tuple[str, Any, list] | None = None  # (name, thread, holder)
+        self._start_next()
+
+    def _start_next(self) -> None:
+        name = self.perm[self.pos % len(self.perm)]
+        holder: list = []
+
+        def work() -> None:
+            import traceback as _tb
+            try:
+                d = os.path.join(self.cache_dir, name)
+                with open(os.path.join(d, "meta.json"), encoding="utf-8") as f:
+                    meta = json.load(f)
+                holder.append(_load_shard(d, meta, None))
+            except Exception:
+                holder.append(_tb.format_exc())  # surfaced by maybe_rotate
+
+        th = self._threading.Thread(target=work, daemon=True)
+        th.start()
+        self._bg = (name, th, holder)
+
+    def maybe_rotate(self) -> None:
+        """Call once per training batch; rotates on every `every`-th call."""
+        self.calls += 1
+        if not self.every or self.calls % self.every != 0:
+            return
+        name, th, holder = self._bg
+        th.join()  # almost always finished (had `every` steps to load)
+        if not holder:
+            raise RuntimeError(f"bg shard load of {name} produced nothing")
+        if isinstance(holder[0], str):  # captured bg exception
+            raise RuntimeError(f"bg shard load of {name} failed:\n{holder[0]}")
+        new = holder[0]
+        if new["meta"]["l_max"] != self.reader.l_max:
+            raise ValueError(f"shard {name} l_max mismatch")
+        # retire oldest; keep shards/_off_ckpt aligned (indexed by position)
+        self.reader.shards.pop(0)
+        if self.reader._off_ckpt:
+            self.reader._off_ckpt.pop(0)
+        self.reader.shards.append(new)
+        self.names.popleft()
+        self.names.append(name)
+        self.pos += 1
+        self._start_next()
+        print(f"[rotate] retired, resident now: {sorted(self.names)}", flush=True)
+
+
 class ShardReader:
     """Read-time sequence slicer + batch builder over one or more shards."""
-
-    def __init__(self, cache_dir: str, preload: bool = False):
+    def __init__(self, cache_dir: str, preload: bool = False,
+                 only: list[str] | None = None):
         self.cache_dir = cache_dir
         self.shards: list[dict[str, Any]] = []
         for name in sorted(os.listdir(cache_dir)):
             d = os.path.join(cache_dir, name)
             if not (os.path.isdir(d) and name.startswith("shard-")):
+                continue
+            if only is not None and name not in only:
                 continue
             with open(os.path.join(d, "meta.json"), encoding="utf-8") as f:
                 meta = json.load(f)
@@ -91,13 +185,7 @@ class ShardReader:
             # batch 36). Loading the arrays into RAM once (sequential read)
             # kills per-step IO entirely — request enough --mem.
             mm = None if preload else "r"
-            self.shards.append({
-                "dir": d,
-                "bytes": np.load(os.path.join(d, "bytes.npy"), mmap_mode=mm),
-                "unit_len": np.load(os.path.join(d, "unit_len.npy"), mmap_mode=mm),
-                "unit_flag": np.load(os.path.join(d, "unit_flag.npy"), mmap_mode=mm),
-                "meta": meta,
-            })
+            self.shards.append(_load_shard(d, meta, mm))
         if not self.shards:
             raise FileNotFoundError(f"no shards found under {cache_dir}")
         self.l_max = int(self.shards[0]["meta"]["l_max"])

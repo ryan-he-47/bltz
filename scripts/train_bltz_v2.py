@@ -101,8 +101,24 @@ def main() -> None:
               f"math={torch.backends.cuda.math_sdp_enabled()} "
               f"cap={cap} (flash needs sm80+)", flush=True)
 
-    reader = ShardReader(cfg.data.cache_dir,
-                         preload=bool(cfg.data.get("preload", False)))
+    # block-level shard rotation (data.rotate_shards, 2026-09-30 用户拍板:
+    # 服务器积德 — K 块驻留+后台预载换下一块,mem 需求从全量 preload 的
+    # 96G 降到 ~48G;数据序=粗粒度块随机)。开启时忽略 data.preload。
+    rot = None
+    rcfg = cfg.data.get("rotate_shards", None)
+    if rcfg and int(rcfg.get("resident", 0)) > 0:
+        from bltz.shards import ShardRotator
+
+        rot = ShardRotator(cfg.data.cache_dir, resident=int(rcfg.resident),
+                           every=int(rcfg.get("every", 2000)),
+                           seed=int(cfg.train.seed) + 7919 * rank)
+        reader = rot.reader
+        if rank == 0:
+            print(f"[rotate] ON: resident {rcfg.resident} shards, "
+                  f"rotate every {rot.every} batches", flush=True)
+    else:
+        reader = ShardReader(cfg.data.cache_dir,
+                             preload=bool(cfg.data.get("preload", False)))
     S = int(cfg.data.n_patches)
     n_seq = reader.n_sequences(S)
     if rank == 0:
@@ -149,7 +165,10 @@ def main() -> None:
                   f"floor<={verifier.floor_bytes}B", flush=True)
 
     def batch_fn() -> dict[str, torch.Tensor]:
-        idx = [rng.randrange(n_seq) for _ in range(int(cfg.train.batch))]
+        if rot is not None:
+            rot.maybe_rotate()
+        idx = [rng.randrange(reader.n_sequences(S))
+               for _ in range(int(cfg.train.batch))]
         return build_batch(reader, verifier, idx, S, reader.l_max)
 
     train(train_mod, batch_fn, cfg, loss_fn=loss_fn, is_rank0=(rank == 0))
