@@ -37,9 +37,21 @@ class ByteStringEncoder(nn.Module):
         self.byte_emb = nn.Embedding(256, d_byte)
         self.pos_emb = nn.Embedding(l_max, d_pos)
         self.in_proj = nn.Linear(d_byte + d_pos, width)
-        self.layers = nn.ModuleList(
-            [ISAB(width, heads, inducing) for _ in range(layers)]
-        )
+        if inducing and inducing > 0:
+            self.layers = nn.ModuleList(
+                [ISAB(width, heads, inducing) for _ in range(layers)]
+            )
+        else:
+            # standard self-attention (2026-09-29 user spec: no inducing
+            # points; pre-norm transformer blocks, everything else unchanged)
+            self.layers = nn.ModuleList([
+                nn.TransformerEncoderLayer(
+                    width, heads, dim_feedforward=4 * width,
+                    dropout=0.0, activation="gelu", batch_first=True,
+                    norm_first=True,
+                )
+                for _ in range(layers)
+            ])
         self.pool = PMA(width, heads, k=1)
         self.out_norm = nn.LayerNorm(width)
         self.out_proj = nn.Linear(width, d_emb)
@@ -51,7 +63,10 @@ class ByteStringEncoder(nn.Module):
         x = torch.cat([self.byte_emb(byte_ids.clamp(0, 255)), self.pos_emb(pos)], dim=-1)
         x = self.in_proj(x)
         for lyr in self.layers:
-            x = lyr(x, key_padding_mask=pad_mask)
+            if isinstance(lyr, nn.TransformerEncoderLayer):
+                x = lyr(x, src_key_padding_mask=pad_mask)
+            else:
+                x = lyr(x, key_padding_mask=pad_mask)
         h = self.pool(x, key_padding_mask=pad_mask)[:, 0]
         return self.out_proj(self.out_norm(h))
 

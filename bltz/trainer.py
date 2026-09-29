@@ -39,6 +39,19 @@ class WSD:
         return self.peak + (floor - self.peak) * t
 
 
+class CosSched:
+    """warmup linear ramp -> cosine decay peak..floor (2026-09-29, AE 5B 配方)."""
+
+    def __init__(self, peak: float, warmup: int, steps: int, floor: float):
+        self.peak, self.warmup, self.steps, self.floor = peak, warmup, steps, floor
+
+    def __call__(self, step: int) -> float:
+        if step < self.warmup:
+            return self.peak * (step + 1) / self.warmup
+        t = min(1.0, (step - self.warmup) / max(1, self.steps - self.warmup))
+        return self.floor + 0.5 * (self.peak - self.floor) * (1.0 + math.cos(math.pi * t))
+
+
 def grad_norm(model: torch.nn.Module) -> float:
     total = 0.0
     for p in model.parameters():

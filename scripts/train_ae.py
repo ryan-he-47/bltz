@@ -10,10 +10,12 @@ byte-acc, exact-match (train & val) every log_every; ckpt best/last.
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 import sys
 import time
+from collections import deque
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -26,7 +28,7 @@ from bltz.config import parse_cli
 from bltz.models.autoencoder import EOS_ID, ByteStringAE
 from bltz.segment_v2 import segment_v2
 from bltz.shards import ShardReader
-from bltz.trainer import WSD
+from bltz.trainer import WSD, CosSched, grad_norm
 
 
 def build_pool(cfg) -> tuple[list[bytes], list[bytes]]:
@@ -149,15 +151,39 @@ def main() -> None:
         model.parameters(), lr=float(cfg.train.lr),
         betas=tuple(cfg.train.betas), weight_decay=float(cfg.train.wd),
     )
-    sched = WSD(float(cfg.train.lr), int(cfg.train.warmup), int(cfg.train.steps),
-                float(cfg.train.decay_frac), float(cfg.train.final_frac))
+    # sched: wsd (default, house) | cosine (2026-09-29 5B 配方: warmup ->
+    # cosine peak..train.final)
+    if str(cfg.train.get("sched", "wsd")) == "cosine":
+        sched = CosSched(float(cfg.train.lr), int(cfg.train.warmup),
+                         int(cfg.train.steps), float(cfg.train.get("final", 1e-6)))
+    else:
+        sched = WSD(float(cfg.train.lr), int(cfg.train.warmup), int(cfg.train.steps),
+                    float(cfg.train.decay_frac), float(cfg.train.final_frac))
+    # fp16 + GradScaler + gn spike guard — aligned with the LM main-run
+    # trainer (2026-09-29: 数值稳定手法对齐). bf16 path keeps plain backward.
+    use_bf16 = bool(cfg.train.bf16)
+    scaler = torch.amp.GradScaler("cuda", enabled=not use_bf16)
+    med_hist: deque[float] = deque(maxlen=1000)
+    skips = 0
     os.makedirs(cfg.train.ckpt_dir, exist_ok=True)
     log_path = os.path.join(cfg.train.ckpt_dir, "train.log")
     rng = random.Random(int(cfg.train.seed) + 1)
     t0 = time.time()
     best = float("inf")
     model.train()
-    for step in range(int(cfg.train.steps)):
+    # auto-resume + periodic last.pt (2026-09-29: 3-day 5B runs need recovery)
+    last_path = os.path.join(cfg.train.ckpt_dir, "last.pt")
+    start_step = 0
+    if os.path.exists(last_path):
+        st_ = torch.load(last_path, map_location="cpu", weights_only=False)
+        model.load_state_dict(st_["model"])
+        if "opt" in st_:
+            opt.load_state_dict(st_["opt"])
+            scaler.load_state_dict(st_["scaler"])
+        start_step = int(st_["step"]) + 1
+        print(f"[ae] resume from last.pt at step {start_step}", flush=True)
+    ckpt_every = int(cfg.train.get("ckpt_every", 10000))
+    for step in range(start_step, int(cfg.train.steps)):
         if stream:
             units = reader.sequence_units(rng.randrange(n_seq), 512)
             ss = rng.sample(units, min(int(cfg.train.batch), len(units)))
@@ -179,12 +205,30 @@ def main() -> None:
         byte_ids, lens, pad_mask = tensorize(ss, model.l_max, dev)
         for g in opt.param_groups:
             g["lr"] = sched(step)
-        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=bool(cfg.train.bf16)):
+        with torch.autocast("cuda", dtype=torch.bfloat16 if use_bf16 else torch.float16):
             ce, bacc, em = batch_loss(model, byte_ids, lens, pad_mask)
         opt.zero_grad(set_to_none=True)
-        ce.backward()
-        gn = torch.nn.utils.clip_grad_norm_(model.parameters(), float(cfg.train.clip))
-        opt.step()
+        if use_bf16:
+            ce.backward()
+        else:
+            scaler.scale(ce).backward()
+            scaler.unscale_(opt)
+        gn = grad_norm(model)
+        median = sorted(med_hist)[len(med_hist) // 2] if len(med_hist) >= 50 else None
+        thresh = max(float(cfg.train.get("spike_skip", 10.0)) * median, 2000.0) \
+            if median is not None else float("inf")
+        if not math.isfinite(gn) or gn > thresh:
+            skips += 1
+            if not use_bf16:
+                scaler.update()
+            continue
+        med_hist.append(gn)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), float(cfg.train.clip))
+        if use_bf16:
+            opt.step()
+        else:
+            scaler.step(opt)
+            scaler.update()
         if step % int(cfg.train.log_every) == 0 or step == int(cfg.train.steps) - 1:
             rec = {"step": step, "loss": round(float(ce), 4),
                    "bacc": round(bacc, 4), "em": round(em, 4),
@@ -202,8 +246,13 @@ def main() -> None:
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             print(rec, flush=True)
+        if ckpt_every and (step + 1) % ckpt_every == 0:
+            torch.save({"model": model.state_dict(), "cfg": cfg.to_dict(),
+                        "opt": opt.state_dict(), "scaler": scaler.state_dict(),
+                        "step": step}, last_path)
     torch.save({"model": model.state_dict(), "cfg": cfg.to_dict(),
-                "step": int(cfg.train.steps)},
+                "opt": opt.state_dict(), "scaler": scaler.state_dict(),
+                "step": int(cfg.train.steps) - 1},
                os.path.join(cfg.train.ckpt_dir, "last.pt"))
     vce, vbacc, vem = evaluate(model, val_pool, cfg, dev, batches=16)
     print(f"[done] val: loss {vce:.4f} bacc {vbacc:.4f} em {vem:.4f}", flush=True)
