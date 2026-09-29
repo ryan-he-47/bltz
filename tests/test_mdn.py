@@ -85,17 +85,28 @@ assert len(m4.adapter) == 2, "linear adapter must be LN+Linear"
 assert isinstance(m4.adapter[1], torch.nn.Linear)
 assert len(m1.adapter) == 4, "default adapter must stay LN+MLP"
 
-# learnable input (2026-09-27): ByteLayerEncoder joint-trained, frozen AE
-# serves targets only. Gradients must reach the byte layer.
+# learnable input (2026-09-29 严谨对照规格): ByteLayerEncoder mirrors the AE
+# encoder 1:1 (std self-attn only — inducing must be 0), joint-trained, frozen
+# AE serves targets only. Gradients must reach the byte layer.
+ae_cfg_std = load("configs/ae.yaml")
+ae_cfg_std.model.d_emb = 16
+ae_cfg_std.model.enc_width = 64
+ae_cfg_std.model.dec_hidden = 64
+ae_cfg_std.model.enc_layers = 1
+ae_cfg_std.model.inducing = 0
+ae_std = ByteStringAE(ae_cfg_std)
 B, S, L = 3, 16, 12
 byte_ids = torch.randint(32, 126, (B, S, L))
 lens = torch.randint(2, L + 1, (B, S))
 pad_mask = torch.arange(L).expand(B, S, L) >= lens[..., None]
 lcfg = Cfg({"model": {**base.model.to_dict(), "input_mode": "learnable"},
             "data": {"n_patches": 16}, "train": {}})
-m5 = BltzLMv2(lcfg, ae)
+m5 = BltzLMv2(lcfg, ae_std)
 assert hasattr(m5, "in_enc") and not hasattr(m5, "adapter"), "learnable: no adapter"
 assert m5.bos.shape[-1] == 96, "BOS must live in d_model space"
+# mirror check: in_enc width/heads/layers == AE encoder; no 16-dim bottleneck
+assert m5.in_enc.in_proj.out_features == 64 and len(m5.in_enc.layers) == 1
+assert m5.in_enc.proj.out_features == 96, "bottleneck replaced by proj to d_model"
 hb, lam5 = m5(byte_ids, pad_mask)
 assert hb.shape == (B, S, 96) and lam5.shape == (B, S, 16)
 loss5 = mdn_nll_loss(m5, {"byte_ids": byte_ids, "pad_mask": pad_mask}, lcfg)

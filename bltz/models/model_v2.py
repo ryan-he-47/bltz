@@ -38,7 +38,9 @@ class BltzLMv2(nn.Module):
         # AE then serves ONLY as prediction-target generator.
         self.learnable_input = str(m.get("input_mode", "frozen")) == "learnable"
         if self.learnable_input:
-            self.in_enc = ByteLayerEncoder(self.l_max, int(m.d_model), int(m.bb_heads))
+            # 2026-09-29 严谨对照规格: 与冻结 AE 编码器同构, 梯度联通,
+            # 无 48 维瓶颈 (proj + LN 到 d_model). 目标仍由冻结 AE 提供.
+            self.in_enc = ByteLayerEncoder(ae.encoder, int(m.d_model))
         elif bool(m.get("adapter_linear", False)):
             # adapter_linear (2026-09-25 control arm): LN + bare Linear lift. The
             # nonlinear-wide default exists because "a bare linear lift would pin

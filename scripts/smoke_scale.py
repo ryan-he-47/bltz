@@ -53,6 +53,16 @@ def main() -> None:
     ae = ByteStringAE(Cfg(ae_state["cfg"]))
     ae.load_state_dict(ae_state["model"])
     model = BltzLMv2(cfg, ae).cuda()
+    # online verify+resplit (train.verify.*) — include its real cost in the sweep
+    verifier = None
+    vcfg = cfg.train.get("verify", None)
+    if vcfg and bool(vcfg.get("enabled", False)):
+        from bltz.verify import VerifyResplitter
+        verifier = VerifyResplitter(model.ae, str(vcfg.tok_dir),
+                                    ent_thresh=float(vcfg.get("ent_thresh", 0.2)),
+                                    floor_bytes=int(vcfg.get("floor_bytes", 3)))
+        if rank == 0:
+            print(f"[verify] ON: TH={verifier.ent_thresh}", flush=True)
     module = _LossModule(model)
     if world > 1:
         module = torch.nn.parallel.DistributedDataParallel(module, device_ids=[local_rank])
@@ -69,7 +79,9 @@ def main() -> None:
             t_steps = []
             for i in range(8):
                 idx = [(rank * 99991 + i * 7919 + j) % n_seq for j in range(bs)]
-                batch = {k: v.cuda() for k, v in reader.make_batch(idx, S, augment=False).items()}
+                from train_bltz_v2 import build_batch
+                batch = {k: v.cuda() for k, v in
+                         build_batch(reader, verifier, idx, S, reader.l_max).items()}
                 torch.cuda.synchronize()
                 t0 = time.time()
                 opt.zero_grad(set_to_none=True)

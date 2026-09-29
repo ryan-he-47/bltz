@@ -1,0 +1,46 @@
+# v2 word-arm formal recipe (2026-09-29 拍板): word 臂确定性切词 +
+# ae_48_256_word_full (2.5B 长训验收通过, docs/36 §4) + linear MDN +
+# 在线核验回退 (train.verify, docs/39 #22-23).
+# 训练预算: 1B units 恒定段 + 0.25B 衰减段 (decay_frac 0.2), LR/WSD 复用旧配方.
+# steps/batch 由 smoke 实测显存后定稿 (V100 32G, 4-6GB 余量规约).
+# 本配置带本机路径(smoke 用); 集群由 sbatch --set 覆盖 cache_dir/ae_ckpt/tok_dir.
+data:
+  cache_dir: data/fineweb_word_local
+  n_patches: 512
+model:
+  d_emb: 48
+  adapter_width: 2048
+  d_model: 768
+  bb_layers: 12
+  bb_heads: 12
+  ffn_mult: 4
+  grad_ckpt: false
+  mdn_hidden: 1024
+  mdn_depth: 0                     # linear head (默认, 2026-09-25 定案)
+  n_comp: 64
+  sigma_floor: 0.05
+  input_mode: frozen               # learnable 臂: --set model.input_mode=learnable
+train:
+  ae_ckpt: checkpoints/ae_48_256_word_full/best.pt
+  steps: 38200                     # batch 64 占位; 实测后按 1.25e9/(B*512) 定稿
+  batch: 64                        # 占位; 按 smoke 显存实测定稿
+  lr: 4.0e-4                       # 复用 v2.yaml 峰值
+  warmup: 1000
+  decay_frac: 0.2                  # 0.25B 衰减段
+  final_frac: 0.1
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  wd: 0.1
+  clip: 1.0
+  spike_skip: 10.0
+  bf16: true                       # cluster: --set train.bf16=false (fp16+scaler)
+  seed: 1234
+  ckpt_dir: checkpoints/v2_word_1b
+  log_every: 50
+  ckpt_every: 250
+  milestone_every: 2000
+  verify:                          # 在线核验回退 (docs/39 #23; 缓存不动)
+    enabled: true
+    ent_thresh: 0.2                # bits; 实测 0.1-0.5 间 flag 率不敏感
+    floor_bytes: 3                 # 字符安全短片地板 (用户拍板: 2~3 字节)
+    tok_dir: data/qwen35_tokenizer
