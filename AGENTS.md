@@ -16,7 +16,8 @@
   解码(密度泛函 snap/mone 正统)。
 - **新主轴**:word 级确定性切词+BPE 兜底(segment_word),纯 BPE 消融;
   linear GMM 头;密度读出。
-- **在途**:593264→593265 word-AE 2.5B 长训(docs/36 基线判据)。
+- **word-AE 2.5B 长训验收通过**(593265,best@105000;六项协议全面超
+  基线,详见 docs/36 §4);现行 AE = ae_48_256_word_full。
 - 测试 15 个全绿;HF token 在 $SCRATCH/hf_cache/token(600,工作区禁存)。
 
 ## 历史状态快照(2026-09-24 及以前,存档)

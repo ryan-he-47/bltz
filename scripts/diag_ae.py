@@ -53,13 +53,25 @@ def main() -> None:
     model.load_state_dict(state["model"])
     model = model.to(DEV).eval()
 
-    # rebuild the same pool split as training (same seed / order)
+    # probe pool: DISTINCT units sampled straight from the cache — aligned with
+    # the AE's training distribution for ANY segmentation arm.
+    # (2026-09-29 ruler fix: build_pool re-segments raw text with legacy
+    # segment_v2 -> BPE-style LEADING-space units, which are OOD for the
+    # word arm (spaces are always trailing there) — docs/38 rule 1 violation)
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from train_ae import build_pool, tensorize
+    from train_ae import tensorize
+    from bltz.shards import ShardReader
 
-    train_pool, val_pool = build_pool(cfg)
+    reader = ShardReader(cfg.data.cache_dir)
+    n_seq = reader.n_sequences(512)
+    seen: dict[bytes, None] = {}
+    rng0 = random.Random(4242)
+    for gi in rng0.sample(range(n_seq), min(407, n_seq)):
+        for u in reader.sequence_units(gi, 512):
+            seen[u] = None
+    pool = list(seen.keys())
     rng = random.Random(4242)
-    probe = rng.sample(val_pool, min(2000, len(val_pool)))
+    probe = rng.sample(pool, min(2000, len(pool)))
 
     lats = []
     with torch.no_grad():
