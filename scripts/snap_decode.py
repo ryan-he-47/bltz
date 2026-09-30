@@ -107,6 +107,43 @@ def main() -> None:
     model.load_state_dict(v2_state["model"])
     src = pickle.load(open(pkl, "rb")) if pkl else None
     cache_units = src["freq_units"] if src else []
+    # --cache <dir> (2026-09-30 大表验收): scan the shard directly for the
+    # true top-N — the pkl sample caps distinct at ~20k, which throttled the
+    # word-arm acceptance table (OOV 13.4%). Also prints the coverage curve
+    # (table-size -> occurrence coverage) that answers "多大表够".
+    cache_dir = sys.argv[sys.argv.index("--cache") + 1] if "--cache" in sys.argv else None
+    if cache_dir:
+        from bltz.shards import ShardReader
+        _r = ShardReader(cache_dir)
+        _s0 = _r.shards[0]
+        _n = int(_s0["meta"]["n_units"])
+        _ul = np.asarray(_s0["unit_len"], dtype=np.int64)
+        _fl = np.asarray(_s0["bytes"], dtype=np.uint8)
+        freq_counter: Counter = Counter()
+        _pos = 0
+        _t0 = time.time()
+        for _s in range(0, _n, 4_000_000):
+            _e = min(_s + 4_000_000, _n)
+            _lens = _ul[_s:_e]
+            _buf = _fl[_pos:_pos + int(_lens.sum())].tobytes()
+            _p = 0
+            for _Ln in _lens:
+                freq_counter[_buf[_p:_p + _Ln]] += 1
+                _p += _Ln
+            _pos += int(_lens.sum())
+            print(f"  [heartbeat] table-scan {_e}/{_n} "
+                  f"({_e / max(time.time() - _t0, 1e-9) / 1e6:.2f}M/s)", flush=True)
+        # occurrence-weighted coverage vs table size (Zipf curve)
+        _total = sum(freq_counter.values())
+        _cum = 0
+        _marks = {20000, 50000, 100000, 120000, 200000, 500000, 1000000}
+        for _rank, (_u, _c) in enumerate(freq_counter.most_common(), 1):
+            _cum += _c
+            if _rank in _marks:
+                print(f"  [coverage] top {_rank:>8} -> {_cum / _total:.4%}", flush=True)
+        cache_units = [u for u, _ in freq_counter.most_common(max(topn, 1_000_000))
+                       ] if topn >= 1_000_000 else [
+            u for u, _ in freq_counter.most_common(topn)]
     table, V, Vn, V2 = build_table(model.ae, "data/qwen35_tokenizer", cache_units, topn,
                                    use_qwen=not no_qwen)
     table_set = set(table)

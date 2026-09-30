@@ -19,10 +19,11 @@
 - **word-AE 2.5B 长训验收通过**(593265,best@105000;六项协议全面超
   基线,详见 docs/36 §4);现行 AE = ae_48_256_word_full。
 - **正式训练(594736 frozen 完成验收 / 594980 learnable 重启在跑)**:
-  首个词级模型 bpb 2.19(T=30,含 OOV 惩罚仍胜纯 BPE 60k 的 2.425),
-  mode EM 四连夺冠,语法骨架强;验收详 docs/39 #31。learnable 臂
-  fp16 事故已修(init_scale 1024+rewarmup,docs/39 #30),重启后过原
-  级联区健康,预计 ~15h。
+  首个词级模型 bpb ≈2.77(500k 协议表,09-30 勘误:20.5k 小表的 2.19
+  系粗表虚高;真实水位=60% 数据追平 2B 混合切分 lin-2B 的 2.70,
+  未胜纯 BPE 60k 的 2.425),mode EM 四连夺冠,生成语法骨架史上最强;
+  验收详 docs/39 #31+勘误。learnable 臂 fp16 事故已修(init_scale
+  1024+rewarmup,docs/39 #30),重启后过原级联区健康,预计 ~15h。
 - **fp16 数值口径(09-30 事故教训)**:密度模型锐化后 fp16 反向在
   init_scale≥8192 必溢出;正式 run 一律 `train.fp16_init_scale=1024`
   (+growth_interval 500);weight-only 重启配 `train.rewarmup`(500)。
