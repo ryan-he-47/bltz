@@ -24,6 +24,11 @@
   未胜纯 BPE 60k 的 2.425),mode EM 四连夺冠,生成语法骨架史上最强;
   验收详 docs/39 #31+勘误。learnable 臂 fp16 事故已修(init_scale
   1024+rewarmup,docs/39 #30),重启后过原级联区健康,预计 ~15h。
+- **09-30 四裁决(docs/39 #33)**:BPE 臂永久关闭(使命已达成);
+  生成质量是唯一质量标准,单 eval 指标不许压架构;learnable 输入臂
+  判死(冻结编码器不是瓶颈,#34 定性对照:预测任务只用 ~9 维);
+  **在途:597353 word 长训**(54000→112000 步,Chinchilla 甜点,
+  衰减尾 42k 退到 0,首用块级轮换,里程碑 10k 间隔)。
 - **fp16 数值口径(09-30 事故教训)**:密度模型锐化后 fp16 反向在
   init_scale≥8192 必溢出;正式 run 一律 `train.fp16_init_scale=1024`
   (+growth_interval 500);weight-only 重启配 `train.rewarmup`(500)。
