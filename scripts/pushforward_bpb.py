@@ -78,11 +78,19 @@ def dec_eval(ae, lam_pr: torch.Tensor, tgt: torch.Tensor, valid: torch.Tensor,
                 leaks and floor out at ~e-40 for both arms; the byte marginal
                 is the honest byte-LM price: variant leakage shows up as
                 byte-level entropy instead of multiplicative collapse).
-    Returns (joint_acc (P,R) f64, marg_nll_per_d summed (P,) f64)."""
+    Returns (joint_acc (P,R) f64, marg_bytes (P,) f64, marg_eos (P,) f64,
+             marg_by_d list f64).
+    v3 (2026-09-30 用户): drop EOS from the metric entirely — pure per-byte CE
+    over the real sample; EOS pricing was a segmentation-identity tax (short-
+    unit arms pay it more often per byte). Kept as a separate accumulator for
+    diagnosis."""
     P, R, D = lam_pr.shape
     lam_flat = lam_pr.reshape(P * R, D).float()
     joint = torch.zeros(P, R, dtype=torch.float64, device=lam_pr.device)
-    marg = torch.zeros(P, dtype=torch.float64, device=lam_pr.device)
+    marg_b = torch.zeros(P, dtype=torch.float64, device=lam_pr.device)
+    marg_e = torch.zeros(P, dtype=torch.float64, device=lam_pr.device)
+    by_d = torch.zeros(l_max + 1, dtype=torch.float64, device=lam_pr.device)
+    by_d_n = torch.zeros(l_max + 1, dtype=torch.float64, device=lam_pr.device)
     ar = torch.arange(P * R, device=lam_pr.device)
     K = comp_w.shape[1]
     for d in range(l_max + 1):
@@ -100,15 +108,23 @@ def dec_eval(ae, lam_pr: torch.Tensor, tgt: torch.Tensor, valid: torch.Tensor,
         pm = (comp_w.unsqueeze(-1).double() * pb.double()).sum(1)    # (P,257)
         nll_d = -torch.log(pm[torch.arange(P, device=lam_pr.device),
                                 tgt[:, d].clamp(min=0)].clamp(min=1e-45))
-        marg += torch.where(vmask, nll_d, torch.zeros_like(nll_d))
-    return joint, marg
+        is_eos = (tgt[:, d] == EOS_ID)
+        is_byte = vmask & ~is_eos
+        marg_b += torch.where(is_byte, nll_d, torch.zeros_like(nll_d))
+        marg_e += torch.where(is_eos, nll_d, torch.zeros_like(nll_d))
+        by_d[d] += torch.where(is_byte, nll_d, torch.zeros_like(nll_d)).sum()
+        by_d_n[d] += is_byte.sum()
+    return joint, marg_b, marg_e, by_d, by_d_n
 
 
 @torch.no_grad()
 def eval_arm(model, seqs, tag):
     rng = torch.Generator(device=DEV).manual_seed(20260930)
     tot_nll = 0.0        # nats (exact-joint pushforward)
-    marg_nll = 0.0       # nats (byte-marginal pushforward — headline)
+    marg_nll = 0.0       # nats, BYTES ONLY (v3 headline — no EOS)
+    marg_eos_nll = 0.0   # nats, EOS positions (diagnostic, not in headline)
+    by_d_sum = None
+    by_d_cnt = None
     tot_bytes = 0
     n_pos = 0
     n_floor = 0          # P_hat underflow (< 1e-40) positions
@@ -140,8 +156,13 @@ def eval_arm(model, seqs, tag):
             sig[0, positions].unsqueeze(1) * eps          # (P, m, K, D)
         mK = M_PER_COMP * K
         probs = torch.softmax(lp[0, positions].double(), -1)  # (P, K)
-        joint, marg = dec_eval(model.ae, lam_s.reshape(P, mK, D), tgt, valid,
-                               Lmax, probs, M_PER_COMP)
+        joint, marg_b, marg_e, by_d, by_d_n = dec_eval(
+            model.ae, lam_s.reshape(P, mK, D), tgt, valid, Lmax, probs, M_PER_COMP)
+        if by_d_sum is None:
+            by_d_sum = torch.zeros(Lmax + 1, dtype=torch.float64)
+            by_d_cnt = torch.zeros(Lmax + 1, dtype=torch.float64)
+        by_d_sum += by_d.cpu()
+        by_d_cnt += by_d_n.cpu()
         lp_s = joint.view(P, M_PER_COMP, K)
         lme = torch.logsumexp(lp_s, dim=1) - np.log(M_PER_COMP)   # (P, K)
         p_hat = (probs * lme.exp()).sum(-1)                        # (P,)  exact-joint
@@ -155,7 +176,8 @@ def eval_arm(model, seqs, tag):
         nll = -torch.log(p_hat.clamp(min=1e-45))
         n_floor += int((p_hat <= 1e-40).sum())
         tot_nll += float(nll.sum())
-        marg_nll += float(marg.sum())
+        marg_nll += float(marg_b.sum())
+        marg_eos_nll += float(marg_e.sum())
         tot_bytes += sum(len(u) for u in true_units)
         n_pos += P
         print(f"  [{tag}] seq {si+1}/{len(seqs)} "
@@ -163,10 +185,15 @@ def eval_arm(model, seqs, tag):
     log2e = float(np.log2(np.e))
     bpb = tot_nll * log2e / max(tot_bytes, 1)
     bpb_m = marg_nll * log2e / max(tot_bytes, 1)
-    print(f"[{tag}] byte-marginal bpb {bpb_m:.4f} | joint bpb {bpb:.4f} | "
-          f"nats/unit {tot_nll / n_pos:.3f} | pos {n_pos} bytes {tot_bytes} | "
-          f"floored {n_floor} ({n_floor / n_pos:.3%}) | "
+    print(f"[{tag}] byteCE bpb {bpb_m:.4f} (no EOS) | byteCE+EOS "
+          f"{(marg_nll + marg_eos_nll) * log2e / max(tot_bytes, 1):.4f} | "
+          f"joint bpb {bpb:.4f} | nats/unit {tot_nll / n_pos:.3f} | pos {n_pos} "
+          f"bytes {tot_bytes} | floored {n_floor} ({n_floor / n_pos:.3%}) | "
           f"MC med|Δnll| {float(np.median(mc_gap)):.4f}", flush=True)
+    if by_d_sum is not None:
+        prof = (by_d_sum / by_d_cnt.clamp(min=1))[:12].tolist()
+        print(f"[{tag}] per-Δ byte nats: "
+              + " ".join(f"{v:.2f}" for v in prof), flush=True)
     return bpb_m
 
 
