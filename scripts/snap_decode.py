@@ -47,21 +47,24 @@ from train_ae import tensorize
 DEV = "cuda"
 
 
-def build_table(ae: ByteStringAE, tok_dir: str, cache_units: list[bytes], topn: int) -> tuple[list[bytes], torch.Tensor, torch.Tensor, torch.Tensor]:
-    tok = _tokenizer(tok_dir)
+def build_table(ae: ByteStringAE, tok_dir: str, cache_units: list[bytes], topn: int,
+                use_qwen: bool = True) -> tuple[list[bytes], torch.Tensor, torch.Tensor, torch.Tensor]:
     qwen_strs = []
-    nv = tok.get_vocab_size()
-    t0 = time.time()
-    for i in range(nv):
-        s = tok.decode([i])
-        if s and 0 < len(s.encode("utf-8")) <= ae.l_max:
-            qwen_strs.append(s.encode("utf-8"))
-        if i % 40000 == 0 and i:
-            print(f"  [heartbeat] vocab {i}/{nv}", flush=True)
+    if use_qwen:
+        tok = _tokenizer(tok_dir)
+        nv = tok.get_vocab_size()
+        t0 = time.time()
+        for i in range(nv):
+            s = tok.decode([i])
+            if s and 0 < len(s.encode("utf-8")) <= ae.l_max:
+                qwen_strs.append(s.encode("utf-8"))
+            if i % 40000 == 0 and i:
+                print(f"  [heartbeat] vocab {i}/{nv}", flush=True)
     freq = Counter(cache_units)
     cache_top = [u for u, _ in freq.most_common(topn)]
     table = list(dict.fromkeys(qwen_strs + cache_top))
-    print(f"[snap] table: {len(qwen_strs)} qwen + {len(cache_top)} cache-top -> {len(table)}", flush=True)
+    print(f"[snap] table: {len(qwen_strs)} qwen + {len(cache_top)} cache-top -> {len(table)}"
+          f"{' (qwen SKIPPED: OOD for word-arm AE)' if not use_qwen else ''}", flush=True)
     lats = []
     with torch.no_grad():
         for i in range(0, len(table), 4096):
@@ -94,6 +97,8 @@ def main() -> None:
     nseqs = int(sys.argv[sys.argv.index("--nseqs") + 1]) if "--nseqs" in sys.argv \
         else (64 if do_ppl else 16)
 
+    no_qwen = "--no-qwen" in sys.argv  # word 臂: Qwen BPE 词表(前导空格
+    # 风格)对 word-AE 是 OOD,表=纯 cache-top(2026-09-30 验收口径)
     ae_state = torch.load(ae_path, map_location="cpu", weights_only=False)
     ae = ByteStringAE(Cfg(ae_state["cfg"]))
     ae.load_state_dict(ae_state["model"])
@@ -102,7 +107,8 @@ def main() -> None:
     model.load_state_dict(v2_state["model"])
     src = pickle.load(open(pkl, "rb")) if pkl else None
     cache_units = src["freq_units"] if src else []
-    table, V, Vn, V2 = build_table(model.ae, "data/qwen35_tokenizer", cache_units, topn)
+    table, V, Vn, V2 = build_table(model.ae, "data/qwen35_tokenizer", cache_units, topn,
+                                   use_qwen=not no_qwen)
     table_set = set(table)
 
     seqs = src["distinct_seq_units"][:nseqs]

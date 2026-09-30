@@ -18,15 +18,11 @@
   linear GMM 头;密度读出。
 - **word-AE 2.5B 长训验收通过**(593265,best@105000;六项协议全面超
   基线,详见 docs/36 §4);现行 AE = ae_48_256_word_full。
-- **正式训练在途(594736 frozen 健康 / 594980 learnable 重启)**:word 臂 +
-  在线核验回退(bltz/verify.py,EM+熵双判据)+ 双臂 batch 36 对齐,
-  1.25B units(1B const+0.25B decay WSD,LR 4e-4),67832 步,
-  预计 9-14h;可学习臂=AE 同构镜像去瓶颈(proj+LN),只差梯度流+瓶颈。
-  步速根因已修(GPFS mmap→preload;best.pt 节流;gn foreach),
-  验证 0.53s/step(594534/594535 已弃,详见 docs/39 #27-28)。
-  **learnable 臂 fp16 事故已修(docs/39 #30)**:init_scale 1024+rewarmup,
-  从健康里程碑 2000 重启(594737 弃)。**checkpoint 新政(用户拍板)**:
-  滚动 ckpt_keep 3+best.pt 兜底,不留永久里程碑(额度)。
+- **正式训练(594736 frozen 完成验收 / 594980 learnable 重启在跑)**:
+  首个词级模型 bpb 2.19(T=30,含 OOV 惩罚仍胜纯 BPE 60k 的 2.425),
+  mode EM 四连夺冠,语法骨架强;验收详 docs/39 #31。learnable 臂
+  fp16 事故已修(init_scale 1024+rewarmup,docs/39 #30),重启后过原
+  级联区健康,预计 ~15h。
 - **fp16 数值口径(09-30 事故教训)**:密度模型锐化后 fp16 反向在
   init_scale≥8192 必溢出;正式 run 一律 `train.fp16_init_scale=1024`
   (+growth_interval 500);weight-only 重启配 `train.rewarmup`(500)。
