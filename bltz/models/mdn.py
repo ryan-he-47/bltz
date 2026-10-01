@@ -133,3 +133,67 @@ class MDNHead(nn.Module):
                 break
             x = x_new
         return x
+
+    @torch.no_grad()
+    def modes(self, h: torch.Tensor, iters: int = 24, tol: float = 0.1):
+        """ALL distinct local maxima + basin masses (2026-09-30 用户设计:
+        多极大值点采样=词级温度的密度原生实现,无需词表).
+
+        Multi-start mean-shift: run mode()'s fixed-point iteration from EVERY
+        component center in parallel (K starts x K comps x D — trivial).
+        Converged points are clustered (L2 < tol); basin mass of mode j =
+        sum of softmax(pi) over components whose start converged into j
+        (proper responsibility-weighted basin mass). Single position only
+        (h: (..., d_in) -> modes (M, D), log_mass (M,), log_dens (M,),
+        sorted by mass desc). Generation usage: sample j ~ softmax(log_mass/T)
+        -> decode — every mode is on-manifold (mode readout champion), so
+        sampled strings stay legal while allowing real diversity.
+        """
+        logit_pi, mu, sig = (t.float() for t in self.params(h))
+        shape = logit_pi.shape[:-1]
+        logit_pi = logit_pi.reshape(-1, self.n_comp)
+        mu = mu.reshape(-1, self.n_comp, self.d_emb)
+        sig = sig.reshape(-1, self.n_comp, self.d_emb)
+        out = []
+        for b in range(mu.shape[0]):
+            lp, m_, s_ = logit_pi[b], mu[b], sig[b]        # (K), (K, D)
+            K, D = m_.shape
+            log_pi = F.log_softmax(lp, -1)
+            const = 0.5 * D * math.log(2 * math.pi)
+            x = m_.clone()                                  # K starts
+            for _ in range(iters):
+                z = (x.unsqueeze(1) - m_.unsqueeze(0)) / s_.unsqueeze(0)
+                log_n = -0.5 * z.pow(2).sum(-1) - s_.log().sum(-1).unsqueeze(0) - const
+                r = F.softmax(log_pi.unsqueeze(0) + log_n, dim=-1)  # (Ks, Kc)
+                w = r.unsqueeze(-1) / s_.pow(2).unsqueeze(0)
+                x_new = (w * m_.unsqueeze(0)).sum(1) / w.sum(1).clamp_min(1e-12)
+                if float((x_new - x).abs().max()) < 1e-5:
+                    x = x_new
+                    break
+                x = x_new
+            # density at converged points
+            z = (x.unsqueeze(1) - m_.unsqueeze(0)) / s_.unsqueeze(0)
+            log_n = -0.5 * z.pow(2).sum(-1) - s_.log().sum(-1).unsqueeze(0) - const
+            ld = torch.logsumexp(log_pi.unsqueeze(0) + log_n, dim=-1)  # (K starts,)
+            # greedy clustering by density desc
+            order = ld.argsort(descending=True)
+            centers: list[torch.Tensor] = []
+            assign = torch.full((K,), -1, dtype=torch.long, device=x.device)
+            for s in order.tolist():
+                if assign[s] >= 0:
+                    continue
+                d = (x - x[s]).norm(dim=-1)
+                members = (d < tol) & (assign < 0)
+                assign[members] = len(centers)
+                centers.append(x[s])
+            M = len(centers)
+            modes = torch.stack(centers)
+            log_mass = torch.log(torch.stack([
+                log_pi[assign == j].exp().sum().clamp_min(1e-30) for j in range(M)]))
+            # density at cluster centers (recompute cheaply)
+            z = (modes.unsqueeze(1) - m_.unsqueeze(0)) / s_.unsqueeze(0)
+            log_n = -0.5 * z.pow(2).sum(-1) - s_.log().sum(-1).unsqueeze(0) - const
+            log_dens = torch.logsumexp(log_pi.unsqueeze(0) + log_n, dim=-1)
+            m_order = log_mass.argsort(descending=True)
+            out.append((modes[m_order], log_mass[m_order], log_dens[m_order]))
+        return out[0] if len(out) == 1 else out

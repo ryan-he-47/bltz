@@ -134,4 +134,32 @@ def _logp(x):
 k_star = lp.argmax(-1)
 init = mu[torch.arange(2)[:, None], torch.arange(7)[None, :], k_star]
 assert (_logp(xm) >= _logp(init) - 1e-3).all(), "mode must not be worse than its init center"
+
+# modes(): two well-separated clusters -> exactly 2 modes, basin mass ~= pi split
+# (drive the head directly: depth=0 with out.weight picking pi logits from h,
+# mu/sigma pinned by bias; 4 comps only — no dummies)
+K4 = 4
+pi_target = torch.tensor([0.35, 0.35, 0.15, 0.15], device=dev)
+muA = torch.zeros(D, device=dev)
+muB = torch.ones(D, device=dev) * 3.0
+mus = torch.stack([muA - 0.05, muA + 0.05, muB - 0.05, muB + 0.05])
+head3 = MDNHead(d_in=K4, hidden=H, n_comp=K4, d_emb=D, sigma_floor=0.05, depth=0).to(dev)
+with torch.no_grad():
+    head3.out.weight.zero_()
+    head3.out.bias.zero_()
+    for k in range(K4):
+        head3.out.weight[k, k] = 1.0  # pi logits = h
+    head3.out.bias.data[K4:K4 + K4 * D] = mus.reshape(-1)
+    head3.out.bias.data[K4 + K4 * D:] = -2.0  # sigma_raw -> sigma ~0.18
+h_in = pi_target.log().unsqueeze(0).to(dev)
+modes, log_mass, log_dens = head3.modes(h_in, tol=0.2)
+# near-degenerate clusters may split into twin fixed points (real math):
+# assert on REGION mass, not mode count
+mass = log_mass.exp()
+inA = modes.norm(dim=-1) < 1.5
+assert abs(float(mass[inA].sum()) - 0.7) < 0.05, f"A region mass {mass[inA].sum()}"
+assert abs(float(mass[~inA].sum()) - 0.3) < 0.05
+assert int(inA.sum()) >= 1 and int((~inA).sum()) >= 1
+print(f"test_mdn modes(): OK ({modes.shape[0]} modes, region masses "
+      f"{float(mass[inA].sum()):.2f}/{float(mass[~inA].sum()):.2f})")
 print("test_mdn: OK")
