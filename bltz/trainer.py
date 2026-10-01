@@ -148,6 +148,12 @@ def train(
     # (0=关)。rotation 只管崩溃恢复;里程碑是实验分支点(2026-09-13 用户
     # 指正:只留尾段两个 ckpt 等于废了 WSD 的稳定段分支能力)。
     milestone_every = int(tcfg.get("milestone_every", 0))
+    # pre-decay checkpoint (2026-09-30 用户拍板): save exactly at the last
+    # plateau step before LR decay starts — branch points must not rely on
+    # milestone interval luck. Weight-only (same branch semantics as
+    # milestones). Idempotent under wall-out resume replay.
+    decay_start = int(tcfg.steps * (1.0 - float(tcfg.decay_frac))) \
+        if float(tcfg.decay_frac) > 0 else None
 
     # ---- graceful interrupt (local runs: free the GPU on demand) ----
     # Two channels, one save-and-stop path; the check sits at loop top so CUDA
@@ -342,6 +348,10 @@ def train(
                 })
             if ckpt_every and (step + 1) % ckpt_every == 0:
                 save_full(step)
+            if decay_start is not None and step + 1 == decay_start:
+                save_full(step, name="ckpt_pre_decay.pt", rotate=False,
+                          state_only=True)
+                print(f"[ckpt] pre-decay plateau saved at step {step}", flush=True)
             if milestone_every and (step + 1) % milestone_every == 0:
                 save_full(step, name=f"ckpt_s{step + 1:07d}.pt", rotate=False, state_only=True)
     except KeyboardInterrupt:
