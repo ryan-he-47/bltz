@@ -12,7 +12,7 @@
 #SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=48G
-#SBATCH --time=5-00:00:00
+#SBATCH --time=3-00:00:00
 #SBATCH --signal=B:SIGTERM@60
 #SBATCH --output=/gpfs1/home/yihe47/bltz/logs/word_05b_p1_%j.out
 
@@ -31,6 +31,12 @@ cd "$REPO"
 git pull --ff-only || echo "[train] git pull failed, using existing checkout"
 mkdir -p "$CKPT"
 
+RESUME=()
+if [ -f "$CKPT/ckpt_full.pt" ]; then
+  RESUME=(--set "train.resume=$CKPT/ckpt_full.pt")
+  echo "[train] resuming own state from $CKPT/ckpt_full.pt"
+fi
+
 $PY -m torch.distributed.run --nproc_per_node=2 --master_port=29531 \
   scripts/train_bltz_v2.py configs/v2_word.yaml \
   --set data.cache_dir="$SCRATCH/data/fineweb10b_v2_word" \
@@ -46,6 +52,7 @@ $PY -m torch.distributed.run --nproc_per_node=2 --master_port=29531 \
   --set train.steps=25432 --set train.decay_frac=0.2134 --set train.final_frac=0.0 \
   --set train.ckpt_every=250 --set train.ckpt_keep=3 \
   --set train.milestone_every=5000 \
-  --set train.ckpt_dir="$CKPT"
+  --set train.ckpt_dir="$CKPT" \
+  ${RESUME[@]+"${RESUME[@]}"}
 
 echo "[done] word-0.5B phase-1 (5B units) finished; log at $CKPT/train.log"
