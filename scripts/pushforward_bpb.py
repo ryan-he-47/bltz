@@ -202,7 +202,13 @@ def main() -> None:
     raw_texts = [b"".join(u for u in seq) for seq in src["distinct_seq_units"][:NSEQ]]
     word_seqs_raw = src["distinct_seq_units"][:NSEQ]
 
-    for tag, v2p, aep, mode in ARMS:
+    arms = ARMS
+    # CLI override: pushforward_bpb.py <tag> <v2_ckpt> <ae_ckpt> [word|bpe|word-noverify]
+    if len(sys.argv) > 3:
+        arms = [(sys.argv[1], sys.argv[2], sys.argv[3],
+                 sys.argv[4] if len(sys.argv) > 4 else "word")]
+
+    for tag, v2p, aep, mode in arms:
         model, step = load_arm(v2p, aep)
         print(f"\n===== {tag} (v2 step {step}) =====", flush=True)
         if mode == "bpe":
