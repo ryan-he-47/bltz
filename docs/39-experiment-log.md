@@ -90,3 +90,5 @@
 ## 0.5B scaling 发射(09-30)
 
 37. **word 臂 0.5B 两段式 scaling(599798=p1 在途)** | 配方:0.5B scaling 原配方全套(2×V100 DDP/batch 24 每卡/d1024·L28·H16/S=4096/grad_ckpt/LR 2e-4 flat/warmup 2000)+ word 臂核验重分词+块级轮换+fp16 硬化(init_scale 1024) | 总预算 10B units 两段:p1=5B 验货段(25432 步,退火尾起于 pre_decay 存档点,final_frac=0),p2 从平台期接续到 10B(50863 步绝对值)**待验货后提交,sbatch 在库未动** | 事故:p1 首发 48G 内存 cgroup OOM(轮换驻留 17.5G/级×2 级+运行时顶穿)→64G(09-27 验证值);QOSMaxGRESMinutes 拒 5 天墙→3 天+wall-out 自动续投(09-27 模式) | 检查点预算口径:滚动 3 全态+10k 里程碑+pre_decay+best/last ≈ 32GB/段/臂 | trainer 新机制:ckpt_pre_decay(退火起点主动存档,实测 step=decay_start−1 精确)
+
+**#37 补记(09-30 深夜)**:OOM 根因定案——单 shard 实为 4.85GB(bytes 3.47+len 0.69+flag 0.69,前算漏 30%),双 rank 驻留 4+1=48.5GB 顶穿 64G cgroup(48G 版更甚);修复=**resident 2**(14.6GB/rank)+mem 64G,599823 重投**运行中**:启动关通过,双 rank verify 心跳正常(flag 0.08%),**12.86 s/step**(与原配方 12.65 一致,核验+轮换零显著开销);p1 全程 ≈90.8h,3 天墙或将切一刀(wall-out 自动续投接上,预计 ~4 天);p2 发射前更新清单已入 docs/40(不动 p2 文件)。**文档总结阶段完成**:07 增量补记(verify/rotator/preload/BLTZ_PROF/rewarmup/pre_decay/modes/推前)、38 §5 读出三路定稿、ARCHITECTURE.md 全刷(英文入口→现行 v2)、40 刷新、AGENTS 状态+悬置项、40 空文件事故修复(37498e4)
