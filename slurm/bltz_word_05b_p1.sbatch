@@ -51,7 +51,7 @@ $PY -m torch.distributed.run --nproc_per_node=2 --master_port=29531 \
   --set train.batch=24 --set train.lr=2.0e-4 --set train.warmup=2000 \
   --set train.steps=25432 --set train.decay_frac=0.2134 --set train.final_frac=0.0 \
   --set train.ckpt_every=250 --set train.ckpt_keep=3 \
-  --set train.milestone_every=5000 \
+  --set train.milestone_every=10000 \
   --set train.ckpt_dir="$CKPT" \
   ${RESUME[@]+"${RESUME[@]}"}
 
