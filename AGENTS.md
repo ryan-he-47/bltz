@@ -29,6 +29,15 @@
   判死(冻结编码器不是瓶颈,#34 定性对照:预测任务只用 ~9 维);
   **在途:597353 word 长训**(54000→112000 步,Chinchilla 甜点,
   衰减尾 42k 退到 0,首用块级轮换,里程碑 10k 间隔)。
+- **长训验收完毕(docs/39 #35)**:word-long(112k)能力指标小增
+  (NLL -34.8/mode EM 24.1%)、snap 2.75 平、byteCE 微退、**生成无
+  突破——120M 尺度能力深度成墙**;modes-peak 免表采样立(#36 翻案:
+  峰顶海拔加权,盆地质量已废;landscape:M≈63 众数/位,权重熵 1.90)。
+- **在途:599798 word 臂 0.5B 两段式 scaling**(docs/39 #37):p1=5B
+  验货段(0.5B 原配方+核验+轮换+fp16 硬化),p2 平台期接续到 10B
+  待验货后提交(sbatch 在库未动,resume 指针届时改 ckpt_pre_decay.pt);
+  trainer 新机制:退火起点主动存档 ckpt_pre_decay;检查点预算
+  ~32GB/段/臂(滚动 3 全态+10k 里程碑+pre_decay+best/last)。
 - **fp16 数值口径(09-30 事故教训)**:密度模型锐化后 fp16 反向在
   init_scale≥8192 必溢出;正式 run 一律 `train.fp16_init_scale=1024`
   (+growth_interval 500);weight-only 重启配 `train.rewarmup`(500)。

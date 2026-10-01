@@ -11,7 +11,7 @@
 #SBATCH --exclude=gpu-v100s-06
 #SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=48G
+#SBATCH --mem=64G
 #SBATCH --time=3-00:00:00
 #SBATCH --signal=B:SIGTERM@60
 #SBATCH --output=/gpfs1/home/yihe47/bltz/logs/word_05b_p1_%j.out
@@ -41,7 +41,7 @@ $PY -m torch.distributed.run --nproc_per_node=2 --master_port=29531 \
   scripts/train_bltz_v2.py configs/v2_word.yaml \
   --set data.cache_dir="$SCRATCH/data/fineweb10b_v2_word" \
   --set data.n_patches=4096 \
-  --set data.rotate_shards.resident=4 --set data.rotate_shards.every=2000 \
+  --set data.rotate_shards.resident=2 --set data.rotate_shards.every=2000 \
   --set model.d_model=1024 --set model.bb_layers=28 --set model.bb_heads=16 \
   --set model.grad_ckpt=true \
   --set train.ae_ckpt="$SCRATCH/ckpts/ae_48_256_word_full/best.pt" \

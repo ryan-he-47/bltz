@@ -72,3 +72,46 @@ T1')→ 113M 骨干 → FiLM 条件头 (h,Δ)→256 逐字节 MTP(k_max、词界
 D11)。已验证事实:FiLM≈concat 同预算;H1(条件独立并行解码)判失败
 (cat/dog/dot 幽灵词)成为 v2 转向起点;encoder 冻结时代结论与 gcos
 诊断见 docs/20/28。v1 代码保留(v1 消融可复现),但**新工作一律 v2**。
+
+## 8. 增量补记(2026-09-30,word 臂时代新机制)
+
+**数据/IO 层**:
+- `ShardReader(preload=True)`:全量入 RAM(GPFS mmap 页错误曾是 batch 相位
+  1.6s 主因;节点内存 603G,preload 需 mem≥96G)。
+- `ShardRotator`(shards.py,**块级轮换**,09-30 拍板"服务器积德"):驻留
+  K shard+后台线程预载下一块+shard 级随机排列;mem 96G→64G;数据序=
+  粗粒度块随机;配置 `data.rotate_shards:{resident,every}`,与 preload
+  互斥;换块在 `batch_fn` 里按调用数触发,`_off_ckpt` 与 shards 同步弹出。
+  测试 `test_shard_rotate.py`。
+- **在线核验回退** `bltz/verify.py`(`VerifyResplitter`,train.verify.*):
+  EM+熵(>0.2 bits)双判据→BPE 重切→字符安全 ≤3B 地板;distinct 级 dict
+  缓存(occurrence 重复 ~133×,稳态 GPU 成本~0);**`process_batch` 批级
+  合并**(每窗一次 GPU 往返→每批一次,慢速事故修复);超 l_max 单位自动
+  旗标;字节守恒(`fit_window` 截尾到 S);评测侧同款对齐(推前脚本内)。
+  测试 `test_verify_fallback.py`。
+
+**训练层**(trainer.py):
+- `BLTZ_PROF=1` 相位计时(env 门控):batch/fwd/bwd/gn/opt/io 分解。
+- GradScaler 参数化:`train.fp16_init_scale`(默认 65536,**正式 run 一律
+  1024**——锐化密度模型 ≥8192 必溢出)/`fp16_growth_interval`(500)。
+- `train.rewarmup`:weight-only 重启后 LR 线性回升(防 fresh-Adam 冲击)。
+- `ckpt_pre_decay.pt`:退火起点主动存档(weight-only,分支点不靠里程碑
+  对齐);里程碑 `milestone_every`(**预算口径 10000**,滚动全态
+  ckpt_keep=3 + best.pt(log 边界节流)兜底;~32GB/段/臂)。
+- grad_norm 改 `torch._foreach_norm` 单同步(原 ~200 次 .item()/步)。
+
+**读出层**(mdn.py):
+- `mode()`:单全局 MAP(均值漂移,生成冠军读出)。
+- `modes()`:**多局部众数枚举**(全分量起点并行 mean-shift+聚簇),配
+  **峰顶海拔加权**+核采样的免表词级温度采样(候选权重=该点密度归一化;
+  盆地质量加权已废——与海拔/合法性反相关,corr −0.29)。
+
+**评估层**(scripts/):
+- `pushforward_bpb.py`(推前字节 CE,免表旁证尺):字节边际
+  P(b|ctx,Δ)=Σ_k π_k·mean_m P_dec(b|λ,Δ),纯字节无 EOS(v3);串级联合版
+  废弃(并行解码器整串联合=边际乘积沉底);CLI: `[tag] [v2] [ae] [mode]`。
+  评测流必须过训练同款核验+回退(铁律 1 评测侧)。
+- `snap_decode.py`:`--no-qwen`(word 臂表=纯 cache-top)+ `--cache`(全
+  shard 扫频建协议表 top-500k+覆盖曲线)。
+- 生成铁律不变(UNSHIFTED 前缀);生成采样:mode(确定性)/modes-peak
+  (免表温度)/snap τ(表约束)。
