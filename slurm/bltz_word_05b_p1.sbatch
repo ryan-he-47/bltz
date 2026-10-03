@@ -43,7 +43,7 @@ $PY -m torch.distributed.run --nproc_per_node=2 --master_port=29531 \
   --set data.n_patches=4096 \
   --set data.rotate_shards.resident=2 --set data.rotate_shards.every=2000 \
   --set model.d_model=1024 --set model.bb_layers=28 --set model.bb_heads=16 \
-  --set model.grad_ckpt=true \
+  --set model.grad_ckpt=true --set model.attn_doc_mask=xformers \
   --set train.ae_ckpt="$SCRATCH/ckpts/ae_48_256_word_full/best.pt" \
   --set train.verify.tok_dir="$TOK" \
   --set train.bf16=false \
