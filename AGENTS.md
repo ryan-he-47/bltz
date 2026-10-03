@@ -38,8 +38,9 @@
   已实施文档分块注意力掩码+边界 loss 掩码(缓存 unit_flag 在线传播,
   bltz/masking.py;测试 18/18 绿),冒烟通过(峰值 25.31GiB/卡 ≤26G 家规),
   **p1 自重投 602642 从 step 11750 接续**(不重开;#37 前 42.9h/11950 步
-  为无掩码 regime,硬存点 11750);掩码代价 ~+40-50% 步时(dense bias 无
-  causal 专用核,grad-ckpt 放大),预计 3 天墙触发一次自动续投。
+  为无掩码 regime,硬存点 11750);掩码步时代价已经 xformers
+  BlockDiagonalCausalMask 后端化解(10-03 晚:~11.0s/步 < 原无掩码
+  12.9,峰值 24.6G;dense 为回退;集群装了 xformers 0.0.29.post1)。
   评测工具侧(snap/pushforward)掩码同口径为后续项。p2 发射前更新清单
   已在 docs/40(resume 指针改 ckpt_pre_decay.pt)。
 - **fp16 数值口径(09-30 事故教训)**:密度模型锐化后 fp16 反向在
