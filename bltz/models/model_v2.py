@@ -37,6 +37,9 @@ class BltzLMv2(nn.Module):
         # learnable = ByteLayerEncoder joint-trained from the NLL — the frozen
         # AE then serves ONLY as prediction-target generator.
         self.learnable_input = str(m.get("input_mode", "frozen")) == "learnable"
+        # boundary attention backend: "auto" (xformers when importable, else
+        # dense fallback) | "xformers" (fail loud) | "dense" (2026-10-03).
+        self.attn_mask_mode = str(m.get("attn_doc_mask", "auto"))
         if self.learnable_input:
             # 2026-09-29 严谨对照规格: 与冻结 AE 编码器同构, 梯度联通,
             # 无 48 维瓶颈 (proj + LN 到 d_model). 目标仍由冻结 AE 提供.

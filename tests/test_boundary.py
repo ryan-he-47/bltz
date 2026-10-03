@@ -130,10 +130,44 @@ def test_boundary_weight() -> None:
     print("ok  boundary loss weight (doc-start targets excluded)")
 
 
+def test_seqlens_from_start() -> None:
+    from bltz.masking import doc_seqlens_from_start
+
+    ds = torch.tensor([
+        [1, 0, 0, 1, 0, 0],   # -> [3, 3]
+        [0, 0, 1, 0, 0, 1],   # -> [2, 3, 1]
+        [1, 0, 0, 0, 0, 0],   # -> [6]
+    ], dtype=torch.bool)
+    assert doc_seqlens_from_start(ds) == [[3, 3], [2, 3, 1], [6]]
+    print("ok  doc_seqlens_from_start (window-major flat order)")
+
+
+def test_xformers_equivalence() -> None:
+    try:
+        import xformers.ops  # noqa: F401
+    except ImportError:
+        print("skip xformers equivalence (not installed)")
+        return
+    torch.manual_seed(5)
+    bb = Backbone(d_model=16, nhead=2, layers=2, ffn_mult=2, max_len=64).eval()
+    x = torch.randn(2, 7, 16)
+    ds = torch.tensor([[1, 0, 0, 1, 0, 0, 1],
+                       [0, 1, 0, 0, 0, 1, 0]], dtype=torch.bool)
+    from bltz.masking import doc_attn_bias, xf_bias_from_start
+
+    o_dense = bb(x, attn_bias=doc_attn_bias(ds, dtype=torch.float32))
+    o_xf = bb(x, attn_bias=xf_bias_from_start(ds))
+    d = (o_dense - o_xf).abs().max().item()
+    assert d < 2e-2, d
+    print(f"ok  xformers block-diagonal == dense bias forward (max d {d:.4f})")
+
+
 if __name__ == "__main__":
     test_shard_flags()
     test_verify_propagation()
     test_bias_structure()
     test_backbone_equivalence()
     test_boundary_weight()
+    test_seqlens_from_start()
+    test_xformers_equivalence()
     print("ALL OK")

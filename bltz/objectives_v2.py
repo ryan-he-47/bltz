@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import torch
 
-from .masking import boundary_weight, doc_attn_bias
+from .masking import boundary_weight, make_attn_bias
 
 
 def mdn_nll_loss(model, batch: dict[str, torch.Tensor], cfg=None) -> torch.Tensor:
     ds = batch.get("doc_start")
-    bias = doc_attn_bias(ds) if ds is not None else None
+    bias = make_attn_bias(ds, getattr(model, "attn_mask_mode", "auto"))
     h, lam = model(batch["byte_ids"], batch["pad_mask"], attn_bias=bias)
     nll = model.head.nll(h, lam)  # (B, S) per-position
     if ds is None:

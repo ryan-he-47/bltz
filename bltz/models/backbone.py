@@ -37,6 +37,16 @@ def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.T
     return torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=-1)
 
 
+def apply_rope_flat(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
+    """Same rotation for the flat xformers layout x (1, L, nh, hd); cos/sin
+    (L, hd/2) — L = B*T, positions repeat per window (cos/repeat pre-tiled)."""
+    hd2 = x.shape[-1] // 2
+    x1, x2 = x[..., :hd2], x[..., hd2:]
+    cos = cos[None, :, None].to(x.dtype)
+    sin = sin[None, :, None].to(x.dtype)
+    return torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=-1)
+
+
 class Block(nn.Module):
     def __init__(self, d_model: int, nhead: int, ffn_mult: int):
         super().__init__()
@@ -52,20 +62,36 @@ class Block(nn.Module):
         self.w2 = nn.Linear(d_ff, d_model, bias=False)
 
     def forward(self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
-                attn_bias: torch.Tensor | None = None) -> torch.Tensor:
+                attn_bias=None) -> torch.Tensor:
         B, T, D = x.shape
         h = self.ln1(x)
-        qkv = self.qkv(h).reshape(B, T, 3, self.nhead, self.hd).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]
-        q = apply_rope(q, cos[:T], sin[:T])
-        k = apply_rope(k, cos[:T], sin[:T])
-        if attn_bias is None:
-            a = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        if attn_bias is not None and not torch.is_tensor(attn_bias):
+            # xformers structured block-diagonal causal mask (2026-10-03 效率
+            # 优化): flatten (B, T) into one sequence; no (B,1,S,S) matrix —
+            # the kernel skips cross-block pairs (V100 bench 64ms vs 267ms
+            # dense vs 127ms plain causal at production shapes, docs/39).
+            from xformers.ops import memory_efficient_attention
+
+            qkv = self.qkv(h).view(B * T, 3, self.nhead, self.hd)
+            cosf = cos[:T].repeat(B, 1)
+            sinf = sin[:T].repeat(B, 1)
+            q = apply_rope_flat(qkv[:, 0].unsqueeze(0), cosf, sinf)
+            k = apply_rope_flat(qkv[:, 1].unsqueeze(0), cosf, sinf)
+            v = qkv[:, 2].unsqueeze(0).contiguous()  # tail slice is strided
+            a = memory_efficient_attention(q, k, v, attn_bias=attn_bias)
+            x = x + self.o(a.view(B, T, D))
         else:
-            # block-diagonal causal bias carries causality itself (2026-10-03
-            # 文档分块掩码) — no is_causal here.
-            a = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_bias)
-        x = x + self.o(a.transpose(1, 2).reshape(B, T, D))
+            qkv = self.qkv(h).reshape(B, T, 3, self.nhead, self.hd).permute(2, 0, 3, 1, 4)
+            q, k, v = qkv[0], qkv[1], qkv[2]
+            q = apply_rope(q, cos[:T], sin[:T])
+            k = apply_rope(k, cos[:T], sin[:T])
+            if attn_bias is None:
+                a = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+            else:
+                # dense (B,1,S,S) bias carries causality itself (2026-10-03
+                # 文档分块掩码, portable fallback) — no is_causal here.
+                a = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_bias)
+            x = x + self.o(a.transpose(1, 2).reshape(B, T, D))
         h2 = self.ln2(x)
         return x + self.w2(F.silu(self.w1(h2)) * self.w3(h2))
 
@@ -111,7 +137,7 @@ class Backbone(nn.Module):
             self.rope_sin = sin.to(x.device)
         cos = self.rope_cos.to(x.device)
         sin = self.rope_sin.to(x.device)
-        if attn_bias is not None and attn_bias.dtype != x.dtype:
+        if torch.is_tensor(attn_bias) and attn_bias.dtype != x.dtype:
             attn_bias = attn_bias.to(x.dtype)  # SDPA needs mask dtype == query
         for blk in self.blocks:
             if self.grad_ckpt and self.training:
