@@ -51,14 +51,20 @@ class Block(nn.Module):
         self.w3 = nn.Linear(d_model, d_ff, bias=False)
         self.w2 = nn.Linear(d_ff, d_model, bias=False)
 
-    def forward(self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
+                attn_bias: torch.Tensor | None = None) -> torch.Tensor:
         B, T, D = x.shape
         h = self.ln1(x)
         qkv = self.qkv(h).reshape(B, T, 3, self.nhead, self.hd).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]
         q = apply_rope(q, cos[:T], sin[:T])
         k = apply_rope(k, cos[:T], sin[:T])
-        a = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        if attn_bias is None:
+            a = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        else:
+            # block-diagonal causal bias carries causality itself (2026-10-03
+            # 文档分块掩码) — no is_causal here.
+            a = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_bias)
         x = x + self.o(a.transpose(1, 2).reshape(B, T, D))
         h2 = self.ln2(x)
         return x + self.w2(F.silu(self.w1(h2)) * self.w3(h2))
@@ -97,7 +103,7 @@ class Backbone(nn.Module):
         freqs = torch.outer(t, inv_freq)
         return freqs.cos(), freqs.sin()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, attn_bias: torch.Tensor | None = None) -> torch.Tensor:
         T = x.shape[1]
         if T > self.rope_cos.shape[0]:  # lazy extension (inference growth)
             cos, sin = self._build_rope(T)
@@ -105,11 +111,13 @@ class Backbone(nn.Module):
             self.rope_sin = sin.to(x.device)
         cos = self.rope_cos.to(x.device)
         sin = self.rope_sin.to(x.device)
+        if attn_bias is not None and attn_bias.dtype != x.dtype:
+            attn_bias = attn_bias.to(x.dtype)  # SDPA needs mask dtype == query
         for blk in self.blocks:
             if self.grad_ckpt and self.training:
                 x = torch.utils.checkpoint.checkpoint(
-                    blk, x, cos, sin, use_reentrant=False
+                    blk, x, cos, sin, attn_bias, use_reentrant=False
                 )
             else:
-                x = blk(x, cos, sin)
+                x = blk(x, cos, sin, attn_bias)
         return self.final_norm(x)

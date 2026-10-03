@@ -256,17 +256,28 @@ class ShardReader:
             self.l_max,
         )
 
-    def sequence_units(self, global_idx: int, n_patches: int) -> list[bytes]:
-        """Raw unit byte strings (needed for the augmentation path)."""
+    def sequence_units_flags(self, global_idx: int, n_patches: int) -> tuple[list[bytes], list[bool]]:
+        """Raw unit byte strings + doc-start flags (True = first unit of a
+        document; from the cache's unit_flag — 2026-10-03 边界掩码信号)."""
         si, u0 = self._seq_location(global_idx, n_patches)
-        flat, lens, _ = self.get_units(si, u0, n_patches)
+        flat, lens, flags = self.get_units(si, u0, n_patches)
         units: list[bytes] = []
         pos = 0
         for Ln in lens:
             n_bytes = int(Ln)  # uint8 scalar would overflow on pos arithmetic (NumPy 2)
             units.append(bytes(flat[pos : pos + n_bytes]))
             pos += n_bytes
-        return units
+        return units, [bool(f) for f in np.asarray(flags).tolist()]
+
+    def sequence_units(self, global_idx: int, n_patches: int) -> list[bytes]:
+        """Raw unit byte strings (needed for the augmentation path)."""
+        return self.sequence_units_flags(global_idx, n_patches)[0]
+
+    def sequence_flags(self, global_idx: int, n_patches: int) -> list[bool]:
+        """Doc-start flags only (cheap path — no unit slicing)."""
+        si, u0 = self._seq_location(global_idx, n_patches)
+        return [bool(f) for f in np.asarray(
+            self.shards[si]["unit_flag"][u0 : u0 + n_patches]).tolist()]
 
     def make_batch(
         self,

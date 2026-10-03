@@ -194,9 +194,13 @@ class VerifyResplitter:
                     finals.extend(_char_chunks(p, self.floor_bytes))
             self._cache[u] = tuple(finals)
 
-    def process_batch(self, windows: list[list[bytes]]) -> list[list[bytes]]:
+    def process_batch(
+        self, windows: list[list[bytes]], doc_starts: list[list[bool]] | None = None
+    ):
         """Verify + resplit a whole batch of windows. Byte-conserving per
-        window; counts only grow (splits)."""
+        window; counts only grow (splits). With doc_starts given (2026-10-03
+        边界掩码), also returns propagated flags: the first piece of a resplit
+        doc-start unit keeps the flag, the rest are False."""
         self._calls += len(windows)
         self.n_in += sum(len(w) for w in windows)
         misses = [u for w in windows for u in dict.fromkeys(w)
@@ -216,7 +220,15 @@ class VerifyResplitter:
                   f"| in->out x{self.n_out / max(self.n_in, 1):.4f} "
                   f"| cache {len(self._cache)} | verify rows {self.n_verify_rows} "
                   f"| floor {self.n_floor} (fail {self.n_floor_fail})", flush=True)
-        return out
+        if doc_starts is None:
+            return out
+        out_st: list[list[bool]] = []
+        for w, st in zip(windows, doc_starts):
+            o_st: list[bool] = []
+            for u, f in zip(w, st):
+                o_st.extend([bool(f)] + [False] * (len(self._cache[u]) - 1))
+            out_st.append(o_st)
+        return out, out_st
 
     def process(self, units: list[bytes]) -> list[bytes]:
         """Single-window wrapper (kept for tests/diagnostics)."""

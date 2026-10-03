@@ -45,20 +45,28 @@ def build_batch(reader: ShardReader, verifier, idx: list[int], S: int,
                 l_max: int) -> dict[str, torch.Tensor]:
     """One training window batch. verifier=None -> raw cache path (unchanged);
     else online verify+resplit per window (bltz/verify.py, 2026-09-29 拍板:
-    在线做不碰缓存), trimmed to exactly S units."""
+    在线做不碰缓存), trimmed to exactly S units. Every batch carries
+    `doc_start` (B, S) bool — the cache's per-unit document-start flags,
+    propagated through verify-resplit (2026-10-03 用户拍板: 文档分块注意力
+    掩码 + 边界 loss 掩码, bltz/masking.py)."""
     if verifier is None:
-        return reader.make_batch(idx, S, augment=False)
+        wins = [reader.sequence_units(gi, S) for gi in idx]
+        starts = [reader.sequence_flags(gi, S) for gi in idx]
+    else:
+        raw = [reader.sequence_units_flags(gi, S) for gi in idx]
+        wins, starts = verifier.process_batch(
+            [u for u, _ in raw], [s for _, s in raw])  # one batched GPU roundtrip
     seqs = []
-    wins = [reader.sequence_units(gi, S) for gi in idx]
-    wins = verifier.process_batch(wins)  # one batched GPU roundtrip
-    for gi, units in zip(idx, wins):
+    for gi, units, st in zip(idx, wins, starts):
         if len(units) < S:  # cannot happen (splits only grow) — belt & braces
-            units = reader.sequence_units(gi, S)
-        units = units[:S]
+            units, st = reader.sequence_units_flags(gi, S)
+        units, st = units[:S], st[:S]
         flat = torch.from_numpy(
             np.frombuffer(b"".join(units), dtype=np.uint8).copy()).long()
         lens = torch.tensor([len(u) for u in units], dtype=torch.long)
-        seqs.append(tensorize_units(flat, lens, l_max))
+        d = tensorize_units(flat, lens, l_max)
+        d["doc_start"] = torch.tensor(st, dtype=torch.bool)
+        seqs.append(d)
     return collate_sequences(seqs)
 
 
@@ -73,8 +81,7 @@ class _LossModule(nn.Module):
         self.core = lm
 
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
-        h, lam = self.core(batch["byte_ids"], batch["pad_mask"])
-        return self.core.head.nll(h, lam).mean()
+        return mdn_nll_loss(self.core, batch, None)
 
 
 def main() -> None:

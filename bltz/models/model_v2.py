@@ -97,9 +97,12 @@ class BltzLMv2(nn.Module):
         x = torch.cat([self.bos.expand(B, 1, -1), lam[:, :-1]], dim=1)
         return self.adapter(x)
 
-    def forward(self, byte_ids: torch.Tensor, pad_mask: torch.Tensor):
+    def forward(self, byte_ids: torch.Tensor, pad_mask: torch.Tensor,
+                attn_bias: torch.Tensor | None = None):
         """Returns (h, lam): backbone states h (B, S, d_model) predicting the
-        next embedding, and detached targets lam (B, S, d_emb)."""
+        next embedding, and detached targets lam (B, S, d_emb). attn_bias
+        (B,1,S,S) = document-blocked causal mask (2026-10-03, bltz/masking.py;
+        None = plain causal — legacy/diagnostic paths)."""
         lam = self.encode_units(byte_ids, pad_mask)  # targets: always frozen AE
         B, S, D = lam.shape
         if self.learnable_input:
@@ -108,4 +111,4 @@ class BltzLMv2(nn.Module):
         else:
             x = torch.cat([self.bos.expand(B, 1, D), lam[:, :-1]], dim=1)  # BOS, λ_1..λ_{S-1}
             x = self.adapter(x)
-        return self.backbone(x), lam
+        return self.backbone(x, attn_bias=attn_bias), lam

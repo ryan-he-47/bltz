@@ -359,6 +359,11 @@ def train(
     finally:
         _restore_handlers()
 
+    if os.environ.get("BLTZ_MEM", "") == "1":
+        print(f"[mem] rank {os.environ.get('RANK', '0')} peak allocated "
+              f"{torch.cuda.max_memory_allocated() / 2**30:.2f} GiB / reserved "
+              f"{torch.cuda.max_memory_reserved() / 2**30:.2f} GiB", flush=True)
+
     if stopped is not None:
         # model/opt are always a consistent pair here: mid-step state is either
         # both pre-step or both post-step, and we label with the last step whose
