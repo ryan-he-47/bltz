@@ -33,11 +33,15 @@
   (NLL -34.8/mode EM 24.1%)、snap 2.75 平、byteCE 微退、**生成无
   突破——120M 尺度能力深度成墙**;modes-peak 免表采样立(#36 翻案:
   峰顶海拔加权,盆地质量已废;landscape:M≈63 众数/位,权重熵 1.90)。
-- **在途:599798 word 臂 0.5B 两段式 scaling**(docs/39 #37):p1=5B
-  验货段(0.5B 原配方+核验+轮换+fp16 硬化),p2 平台期接续到 10B
-  待验货后提交(sbatch 在库未动,resume 指针届时改 ckpt_pre_decay.pt);
-  trainer 新机制:退火起点主动存档 ckpt_pre_decay;检查点预算
-  ~32GB/段/臂(滚动 3 全态+10k 里程碑+pre_decay+best/last)。
+- **在途:602642 word 臂 0.5B 两段式 scaling 接续**(docs/39 #37+#38):
+  **10-03 边界掩码拍板**——首版训练无任何文档边界处理(重大设计失误):
+  已实施文档分块注意力掩码+边界 loss 掩码(缓存 unit_flag 在线传播,
+  bltz/masking.py;测试 18/18 绿),冒烟通过(峰值 25.31GiB/卡 ≤26G 家规),
+  **p1 自重投 602642 从 step 11750 接续**(不重开;#37 前 42.9h/11950 步
+  为无掩码 regime,硬存点 11750);掩码代价 ~+40-50% 步时(dense bias 无
+  causal 专用核,grad-ckpt 放大),预计 3 天墙触发一次自动续投。
+  评测工具侧(snap/pushforward)掩码同口径为后续项。p2 发射前更新清单
+  已在 docs/40(resume 指针改 ckpt_pre_decay.pt)。
 - **fp16 数值口径(09-30 事故教训)**:密度模型锐化后 fp16 反向在
   init_scale≥8192 必溢出;正式 run 一律 `train.fp16_init_scale=1024`
   (+growth_interval 500);weight-only 重启配 `train.rewarmup`(500)。
@@ -45,7 +49,7 @@
   (ShardRotator,`data.rotate_shards: {resident:4, every:2000}`)——
   驻留 4 shard+后台预载换下一块,mem 96G→~48G;数据序从 iid 变
   粗粒度块随机,跨 run 对比曲线细纹理时注意;当前 run 保持 preload。
-- 测试 15 个全绿;HF token 在 $SCRATCH/hf_cache/token(600,工作区禁存)。
+- 测试 18 个全绿(含 test_boundary);HF token 在 $SCRATCH/hf_cache/token(600,工作区禁存)。
 
 ## 历史状态快照(2026-09-24 及以前,存档)
 
