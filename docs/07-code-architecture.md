@@ -128,8 +128,12 @@ D11)。已验证事实:FiLM≈concat 同预算;H1(条件独立并行解码)判�
   掩码损失(边界剔除后归一);Block/Backbone 增加 attn_bias;trainer
   `BLTZ_MEM=1` 打印峰值显存。测试 `test_boundary.py`(结构/掩码全窗≡
   分段前向逐位等价/跨文档不泄漏/传播/权重)。
-- 代价:步时 ~+40-50%(dense bias 走不了 causal 专用核,grad-ckpt 放大);
-  显存 +~1.2GB(production 实测峰值 25.31GiB/卡,家规 26G 内)。
+- 代价/后端(10-03 晚):`make_attn_bias` 工厂 auto/xformers/dense——
+  **xformers BlockDiagonalCausalMask**(结构化,零矩阵)集成后步时不升反降:
+  production 实测 **~11.0s/步**(vs dense 18.1,vs 原无掩码 12.9;块对角
+  省跨文档算量),峰值 24.56GiB/卡;**dense (B,1,S,S) 为回退**(本机无
+  xformers 时 auto 自动回退,兼容零回归)。集群依赖:xformers 0.0.29.post1
+  (torch 2.5.1 匹配;pip 曾用于安装,登录节点不再跑此类任务)。
 - 悬置:评测工具(snap/pushforward)掩码同口径未做;SIGTERM 优雅存退在
   torchrun/scancel 下未生效(STOP 文件路径可靠;wall-out 存点粒度=
   ckpt_every)。
