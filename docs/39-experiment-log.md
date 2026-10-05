@@ -100,3 +100,15 @@
 **#38 补记 2(10-03 晚 20:37-20:55,部署)**:用户拍板 A——STOP 文件优雅存退 602642(saved_step=12169,即存即退机制首次实战完美:interrupt_stop 落日志/ckpt_full 20:37:51 更新/STOP 自消费)→ p1 sbatch 显式 pin attn_doc_mask=xformers → **602757 自 step 12170 续训**(gpu-v100s-04),实测 **10.96 s/步**(与冒烟区完全一致),loss/gn 健康;剩余 13182 步 ≈ 40h(预计 10-05 下午完),无 3 天墙风险。**掩码效率优化线闭环:dense 18.14 → xf 10.96(反快于原无掩码 12.86)**
 
 **#38 补记 3(10-04 12:40 核查)**:602757 健康推进至 **step 17450**(xf 稳态 **10.84 s/步**,loss -32.9,gn ~17,skips 25≈0.14%(与前期同率),verify flag 0.047%,ckpt 滚动正常);剩余 7982 步 ≈ **24h → 预计 10-05 午间完**(3 天墙 10-06 20:42,余裕)。集群 repo 已同步 bdb15aa。
+
+## 0.5B word 臂 p1 验收(2026-10-05,25432 步收官)
+
+**#39 word-05b-p1(0.5B,5B units,xf 掩码 regime)验货** | 全程 40h(前 11750 步无掩码段 + 后段掩码 xf,10.8-11.0 s/步);动力学健康:退火尾持续下探(rolling ~-35.5),skips 37≈1.5‰(7 个 inf 尖峰全被跳过),轮换/存退无误。验收电池=完整五段(diag_v2 backbone suite → snap-500k → pushforward byteCE → semantic → 扩展生成 8 prompt×6 读出),产物 **checkpoints/word_05b_p1_accept.log**;对照 word-long(112k 步/120M,同 pkl/表/口径)。
+
+- **能力**:held-out NLL **-35.67 vs -34.79**(↓0.89);top5 覆盖 36.3% 平;EM 三读出 ≈平(argmax 21.3%/min-sigma 17.6%/conf 22.0%);pi 健康(熵 2.49,有效 9.5/64)。
+- **snap-500k 头条(§0 修正案口径)**:bpb **2.694 vs 2.747**(↓0.053,T=10 校准,覆盖 99.43% 同);mode EM **23.6% vs 24.1%**(-0.5pp,噪声级)。
+- **推前 byteCE**:bpb **4.968 vs 5.565**(↓0.60 ≈11%,+EOS 5.13 vs 5.73);**深 Delta 改善最大**(Δ12 15.86→11.26,Δ9-11 同步收窄);joint floored 29.4% vs 31.3%。
+- **语义**:NMI(h) 0.254 ≈ NMI(λ) 0.257,h 内编辑 0.768 > λ 0.548——结构同构无变。
+- **生成目检(核心看点)**:mode/snap-argmax 仍是 'the first to be the first...' 型吸引子循环;modes-peak 与 snap t=0.8-1.0 语法更流畅、句段更长(如 'It is important to note that the best way to...'),但**循环与数字串噪声仍在**。**结论:'规模减轻吸引子'未兑现(0.5B×5B units 不破墙);能力尺度温和上移、生成无质变。**
+
+**事故与修复(首载即撞)**:p1 的 last.pt 保存漏 _state_model 剥离,键带 module.core. 前缀(2026-10-05 掩码 era 引入 _LossModule 包装后的漏改点;ckpt_full/best/pre_decay 不受影响),评测工具直载失败;验收改用键名规范化副本 word_05b_p1_last_norm.pt(266 键全等于新构模型,权重逐位不变);trainer.py 已修复(改 _state_model(model).state_dict())+ 本地 3 步冒烟(key 已干净、loss 逐位同)+ test_resume/test_boundary 全绿。

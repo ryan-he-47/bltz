@@ -33,17 +33,15 @@
   (NLL -34.8/mode EM 24.1%)、snap 2.75 平、byteCE 微退、**生成无
   突破——120M 尺度能力深度成墙**;modes-peak 免表采样立(#36 翻案:
   峰顶海拔加权,盆地质量已废;landscape:M≈63 众数/位,权重熵 1.90)。
-- **在途:602757 word 臂 0.5B 两段式 scaling 接续**(docs/39 #37+#38):
-  **10-03 边界掩码拍板**——首版训练无任何文档边界处理(重大设计失误):
-  已实施文档分块注意力掩码+边界 loss 掩码(缓存 unit_flag 在线传播,
-  bltz/masking.py;测试 18/18 绿),冒烟通过(峰值 25.31GiB/卡 ≤26G 家规),
-  **p1:602757 自 step 12170 起 xf 后端**(602642 优雅存退后换装;
-  10-04 12:40 核查:step 17450,10.84 s/步,剩余 7982 步 ≈ 24h,预计
-  10-05 午间完,无墙险;掩码效率已 xformers
-  BlockDiagonalCausalMask 化解——dense 18.1→xf 11.0,反快于原无掩码
-  12.9;峰值 24.6G;dense 为回退;集群装了 xformers 0.0.29.post1)。
-  评测工具侧(snap/pushforward)掩码同口径为后续项。p2 发射前更新清单
-  已在 docs/40(resume 指针改 ckpt_pre_decay.pt)。
+- **p1 word 臂 0.5B 验收完成(10-05,25432 步,40h)**(docs/39 #38+#39):
+  掩码=xformers 块对角 regime(dense 回退;集群装 xformers 0.0.29.post1),
+  掩码段稳态 10.8-11.0 s/步;对 word-long(120M)全面小幅上移:NLL
+  **-35.67 vs -34.79**、snap-500k bpb **2.694 vs 2.747**、byteCE
+  **4.97 vs 5.57**(深 Δ 段改善最大 15.9→11.3);EM 持平(mode 23.6%
+  vs 24.1%)。**生成无质变——吸引子循环未破,"规模解墙"未兑现。**
+  事故:last.pt 保存漏 _state_model 剥离(`module.core.` 前缀,评测直载
+  失败)→ 规范化副本评测(权重逐位不变)+ trainer 已修复(冒烟验证)。
+  **p2(10B units)发射与否 + 1B+ 档与否待用户拍板**(清单在 docs/40)。
 - **fp16 数值口径(09-30 事故教训)**:密度模型锐化后 fp16 反向在
   init_scale≥8192 必溢出;正式 run 一律 `train.fp16_init_scale=1024`
   (+growth_interval 500);weight-only 重启配 `train.rewarmup`(500)。

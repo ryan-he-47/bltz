@@ -395,7 +395,9 @@ def train(
         )
     save_full(tcfg.steps - 1)
     torch.save(
-        {"model": model.state_dict(), "cfg": cfg.to_dict(), "step": tcfg.steps, "loss": last_loss},
+        # _state_model 剥离 DDP/_LossModule 包装,与其余 ckpt 同格式(2026-10-05
+        # 修复:原裸 model.state_dict() 产出 module.core.* 前缀,评测工具直载失败)
+        {"model": _state_model(model).state_dict(), "cfg": cfg.to_dict(), "step": tcfg.steps, "loss": last_loss},
         os.path.join(tcfg.ckpt_dir, "last.pt"),
     )
     return history
