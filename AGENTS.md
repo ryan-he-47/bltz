@@ -41,7 +41,9 @@
   vs 24.1%)。**生成无质变——吸引子循环未破,"规模解墙"未兑现。**
   事故:last.pt 保存漏 _state_model 剥离(`module.core.` 前缀,评测直载
   失败)→ 规范化副本评测(权重逐位不变)+ trainer 已修复(冒烟验证)。
-  **p2(10B units)发射与否 + 1B+ 档与否待用户拍板**(清单在 docs/40)。
+  **p2 已发射(10-05,605592;自 step 20004 → 50863=10B units,~93h,
+  10.88s/步,wall-out 自动续投已入 sbatch;预计 10-09 下午完);
+  1B+ 档与否待 p2 验收后定**。
 - **fp16 数值口径(09-30 事故教训)**:密度模型锐化后 fp16 反向在
   init_scale≥8192 必溢出;正式 run 一律 `train.fp16_init_scale=1024`
   (+growth_interval 500);weight-only 重启配 `train.rewarmup`(500)。
