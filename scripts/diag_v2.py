@@ -179,13 +179,22 @@ def main() -> None:
         outs: list[str] = []
         confs_out: list[float] = []
         with torch.no_grad():
-            for _ in range(GEN_STEPS):
+            for gstep in range(GEN_STEPS):
                 bids, _, pmask = tensorize(cur_units, model.l_max, DEV)
                 lam_u = model.encode_units(bids.unsqueeze(0), pmask.unsqueeze(0))
                 x = torch.cat([model.bos.expand(1, 1, -1), lam_u], dim=1)
                 h = model.backbone(model.adapter(x))[:, -1:]
                 logit_pi, mu, _ = model.head.params(h)
                 lp = logit_pi[0, 0].float()
+                # 数值发散守卫(2026-10-09 p2 验收事故): 自由生成自反馈可能在
+                # 某代把 h/logit_pi 推成 NaN/inf, 此时 softmax 采样行=NaN,
+                # torch CUDA multinomial 会 device-side assert 杀进程
+                # (TensorCompare.cu `input[0] != 0`; NaN/全零/负值行触发)。
+                # 诊断脚本按"停止该轨迹"处理并记录, 不伪造成正常样本。
+                if not torch.isfinite(lp).all():
+                    print(f"\n[gen] tau={tau} non-finite logit_pi at step {gstep}; "
+                          f"trajectory diverged, stopping sample", flush=True)
+                    break
                 k3 = lp.topk(3).indices
                 if tau <= 0:
                     kk = k3[:1]

@@ -112,3 +112,37 @@
 - **生成目检(核心看点)**:mode/snap-argmax 仍是 'the first to be the first...' 型吸引子循环;modes-peak 与 snap t=0.8-1.0 语法更流畅、句段更长(如 'It is important to note that the best way to...'),但**循环与数字串噪声仍在**。**结论:'规模减轻吸引子'未兑现(0.5B×5B units 不破墙);能力尺度温和上移、生成无质变。**
 
 **事故与修复(首载即撞)**:p1 的 last.pt 保存漏 _state_model 剥离,键带 module.core. 前缀(2026-10-05 掩码 era 引入 _LossModule 包装后的漏改点;ckpt_full/best/pre_decay 不受影响),评测工具直载失败;验收改用键名规范化副本 word_05b_p1_last_norm.pt(266 键全等于新构模型,权重逐位不变);trainer.py 已修复(改 _state_model(model).state_dict())+ 本地 3 步冒烟(key 已干净、loss 逐位同)+ test_resume/test_boundary 全绿。
+
+## 0.5B 两段式 p2 验收(2026-10-09,50863 步 = 累计 10B units)
+
+**#40 word-05b-p2 验货(0.5B/10B units,xf 掩码 regime)** | 全程两段
+~93.5h:**wall-out 自动续投首次实战零人工**(605592 跑满 72h:wall-300s
+STOP 优雅停,saved_step 43740 → 自动续投 612122 续 21.4h 完成;段间
+损失 ≤1 步)。终步 loss -40.26,lr→3.7e-8,退火尾 -41~-42 探底,
+skips 43≈0.8‰,轮换/存退无恙。验收电池同 p1 五段,产物
+**checkpoints/word_05b_p2_accept.log**(含 §1 重跑注记);对照 word-long/
+p1 同 pkl/表/口径:
+
+- **能力全面大幅上移**:held-out NLL **-40.69**(p1 -35.67 / word-long
+  -34.79);top5 覆盖 **40.44%**(36.3%);EM:argmax 24.41%/conf 24.46%
+  (p1 21.3%/22.0%);pi 健康(熵 2.42,有效 8.9/64)。
+- **snap-500k 头条 bpb 2.539**(p1 2.694 / word-long 2.747);mode EM
+  **26.3%**(23.6%/24.1%);gmm 25.8%。
+- **推前 byteCE 4.891**(p1 4.968 / word-long 5.565);joint floored
+  27.0%;逐 Δ 浅段改善、深段(Δ≥8)微退(锐化 miss 自信,word-long 同
+  机制;snap T=10 校准吸收)。
+- **语义**:NMI(h) **0.271 > NMI(λ) 0.257**(p1 持平;h 类型结构首次
+  超过 λ);h 内编辑 0.739 > λ 0.548(h 松、λ 紧的健康分工不变)。
+- **生成目检(核心看点)**:mode/snap-argmax 仍 "the first to be the
+  first..." 型吸引子循环;**但 modes-peak/τ0.8-1.0 流畅度与主题黏合
+  显著提升**——出现段落级 discourse 结构(如医学 prompt → "...a
+  healthy diet. As the name implies... For example...";科研 prompt →
+  摘要体),连贯跨度明显超 p1。**"规模解墙"判词:部分兑现(采样流),
+  确定性读出循环未破。**
+- **事故与修复**:§1 tau=1.0 分量采样第 25 代自反馈数值发散
+  (h/logit_pi=NaN)→ softmax NaN 行 → torch CUDA multinomial device
+  assert(TensorCompare.cu `input[0] != 0`;微测:NaN/全零/负值行触发,
+  正常行安全)杀进程;§2-§5 独立进程无影响。**diag_v2 加 isfinite 守卫**
+  (发散即停+记录);重跑能力数字逐位一致。教训:自由生成自反馈可数值
+  发散,**采样工具一律加 isfinite 守卫**(悬置:gen_long modes-peak 分支
+  同风险未触发,后续统一加)。

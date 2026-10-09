@@ -96,6 +96,11 @@
 - **坑**:生成循环的骨干输入必须 UNSHIFTED(cat(bos, 全部已知 token)),
   backbone_input() 是教师强制 shift 语义,生成误用即差一位复读
   (2026-09-29 事故)。
+- **数值守卫(2026-10-09 p2 验收事故)**:自由生成自反馈可数值发散
+  (h/logit_pi→NaN);softmax 采样行 NaN 送 torch CUDA multinomial 会
+  device-side assert 杀进程(TensorCompare.cu `input[0] != 0`;NaN/全零/
+  负值行触发)。**采样/生成工具一律加 isfinite 守卫**(发散即停该轨迹
+  并记录,不伪造样本;diag_v2.py 已实施,gen_long modes-peak 分支待加)。
 
 ## 6. 语义结构(回答:h/λ 里有没有语义)
 
