@@ -6,10 +6,20 @@
 (评估协议清单)。历史入口:`docs/28-phase-summary.md`(v1 总结)、
 `docs/01-design.md`(v1 设计)、`docs/08-runbook-stage1.md`(v1 起跑)。
 
-## 当前状态(2026-09-29,v2 时代·第二辑;详见 docs/37)
+## 当前状态(2026-10-09,0.5B Chinchilla 里程碑收官;详见 docs/41)
 
-**入口:docs/37(v2 阶段总结·第二辑)+ docs/38(评估协议权威)+ docs/39(实验
-日志索引)+ docs/40(下步计划)+ docs/07(现行架构)。**
+**入口:docs/41(v2 阶段总结·第三辑/0.5B 里程碑,压缩上下文入口)+
+docs/38(评估协议权威)+ docs/39(实验日志索引)+ docs/40(下步计划)+
+docs/07(现行架构);历史辑 docs/37/35。**
+
+- **0.5B Chinchilla 里程碑收官(2026-10-09,docs/41)**:word 臂两段式
+  10B units——snap-500k bpb **2.539**(word-long 2.747)、NLL **-40.69**、
+  byteCE 4.89、top5 40.4%、mode EM 26.3%、NMI(h) 0.271 > λ 0.257;
+  曲线终点仍下探;数据:缓存 9.178B units(14 shards),累计 ~1.57 遍,
+  余量≈0。
+- **下一阶段(用户拍板 10-09)**:①**10B 量级新数据续训**(全新语料,
+  需重建 word 缓存;准备清单+待拍板子项见 docs/41 §5)→ ②**指令
+  微调(SFT)**。
 
 - **三废除(09-29 拍板)**:非确定性切词(纯 BPE bpb -15% 实证)、
   非线性 GMM 头(深度阶梯单调反证,mdn_depth=0 默认)、分量-词对应
@@ -44,8 +54,7 @@
   全面大幅上移——NLL **-40.69** vs p1 -35.67、snap-500k bpb **2.539**
   vs 2.694、byteCE 4.89、top5 40.4%、mode EM 26.3%;**生成:modes-peak/
   τ 采样流畅度与主题黏合可感知提升**。事故:§1 采样轨迹数值发散(NaN)撞 torch multinomial device
-  assert → diag_v2 已加 isfinite 守卫。**下一决策:1B+ 档 / 杠杆切换,
-  待用户拍板**(docs/40)。
+  assert → diag_v2 已加 isfinite 守卫。**下一阶段已定:10B 新数据续训→SFT(docs/41 §5)。**
 - **fp16 数值口径(09-30 事故教训)**:密度模型锐化后 fp16 反向在
   init_scale≥8192 必溢出;正式 run 一律 `train.fp16_init_scale=1024`
   (+growth_interval 500);weight-only 重启配 `train.rewarmup`(500)。

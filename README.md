@@ -22,7 +22,7 @@ see `docs/17`/`docs/17b` (closure episode) and `docs/18-restart-handoff.md`
 本架构能 work 的前提与 BLT 的若干研究结论相矛盾——若我们 work,那些组件的
 必要性即被证伪。
 
-**状态:已复工(2026-09-14 晚;封存期留档见 `docs/17`/`docs/17b`,复工决议见 `docs/18-restart-handoff.md`)**。入口文档:
+**状态:活跃——0.5B word 臂 Chinchilla 里程碑收官(两段式 10B units,2026-10-09,详见 `docs/41`);下一阶段:10B 量级新数据续训 → 指令微调**。(2026-09-14 晚复工;封存期留档见 `docs/17`/`docs/17b`,复工决议见 `docs/18-restart-handoff.md`)。入口文档:
 
 | 文档 | 内容 |
 |---|---|
@@ -66,6 +66,7 @@ see `docs/17`/`docs/17b` (closure episode) and `docs/18-restart-handoff.md`
 | `docs/38-eval-reference.md` | **评估协议唯一权威**(方法论铁律+六层协议+工具 CLI,自包含,2026-09-29) |
 | `docs/39-experiment-log.md` | **实验日志压缩索引**(v2 时代 21 个实验的动机/配置/结果,详情指 docs/32,2026-09-29) |
 | `docs/40-next-steps.md` | **短期计划**(长训 AE 验收→可学习编码器严谨对照→scaling 原生+1B 微调,2026-09-29) |
+| `docs/41-phase-summary-v2c.md` | **v2 阶段总结·第三辑(0.5B Chinchilla 里程碑,2026-10-09;当前压缩上下文入口)** |
 | `docs/blt_research/ByteField用户立场归档.md` | 用户立场:工作定位、学术生态位、设计哲学 |
 | `reference_projects/` | 参考:BLT / Fast BLT / HAT / DMBP 论文文本版、simple_point_cloud(架构模板)、MoB_Head(问题定义) |
 
