@@ -146,11 +146,17 @@ segment_word 重切后逐 unit 评测:teacher-forced CE/bacc + 贪婪解码 EM):
 1. **内部协议(现有,必跑)**:docs/38 全套五段——snap-500k bpb(旧分布,
    兼作遗忘监控)、held-out NLL、byteCE、mode EM、top5、NMI;生成目检
    (modes-peak/τ 采样,正向维度口径,禁循环否决项)。
-2. **lm-eval-harness(新基建,并行搭建)**:自定义 LM 子类
-   (loglikelihood/loglikelihood_rolling/generate_until),0.5B 档标准电池 =
-   OLMES 八件套(acc_norm,与 bpb 同构)+ MMLU 5-shot(acc_char 辅口径);
-   字节主场 CUTE/CharBench 留待 SFT 后(生成式)。基建 1-2 天,续训 4 天
-   窗口内完成,验收前就绪。对拍校验:先跑 GPT-2 小模型核 acc_norm 口径。
+2. **lm-eval-harness(已接入,10-18 完成)**:自定义 LM 子类
+   (`scripts/lmeval_bltz.py`,register_model("bltz"),三方法全实现,自带
+   simple_evaluate 入口+--selftest);本机双验证通过(bltz hellaswag
+   limit32 三模式出数 + distilgpt2 对拍 acc/acc_norm 契约同构)。
+   **⚠️ 口径注记(实测发现,验收行文必须携带)**:unit 级 GMM 密度 NLL
+   绝对值随 unit 字节长度变化极弱(NLL 约与 unit 数成正比),harness 的
+   acc_norm 按 continuation 字节归一 → **系统性偏向长候选**(合成电池:
+   acc 4/5 金标 vs acc_norm 1/5)。**多选任务主口径 = pushforward_joint
+   score_mode + acc**;unit_nll 下只读 acc;acc_norm 谨慎解读。
+   遗留:集群跑电池前写 `slurm/bltz_lmeval.sbatch`(GPU 节点、$SCRATCH
+   路径、batch 4-8)。
 
 **判据口径**:与 p2 终态对表(bpb 2.539/NLL -40.69/EM 26.3%);文献预期
 +10B 全新数据有清晰可见的下探;遗忘红线=旧分布 snap bpb 退化 >0.02 时
