@@ -1,17 +1,24 @@
 """Download CPT data slices from HF to cluster scratch (docs/43 §1, 2026-10-18).
 
-Phases (resumable via .done markers, per-file heartbeats with rate/ETA):
+Phases (resumable via .done markers + per-source-file .progress.json,
+heartbeats with rate/ETA):
   fw10bt_ids : dl FineWeb sample/10BT 000..013 (the exact files that built the
                OLD cache; build_cache_v2 N_FILES=14), extract `id` column into
                an int64-hash parquet, then DELETE the raw parquets
-               (re-downloadable, not a live asset).
-  dclm       : dl dclm-baseline-1.0 parquets (sorted) until TARGET_GB_DCLM.
+               (re-downloadable, not a live asset). [DONE 2026-10-18]
+  dclm       : dl dclm-baseline-1.0 (ships as .jsonl.zst, NOT parquet) from
+               global-shard_01_of_10, stream-decompress, keep only `text`,
+               write one parquet per source file, until TARGET_TEXT_GB_DCLM.
   fweb_edu   : dl fineweb-edu parquets, DROP rows whose id-hash is in the
                fw10bt set (~9% expected), write filtered parquets until
-               TARGET_GB_EDU (post-filter bytes).
+               TARGET_TEXT_GB_EDU (post-filter text bytes).
   anneal     : finemath-4plus slice + stack-edu {Python,JavaScript,Markdown}
                slices (normalized to a `text` column) for the decay tail.
   sft        : smol-smoltalk full (kept as-is; SFT processing comes later).
+
+Size targets are in *text bytes* (FineWeb calibration: 46GB text = 9.178B
+units, ~5.0 B/unit): DCLM 33GB (~6.6B units, 60%), Edu 22GB kept (~4.4B
+units, 40%) — headroom over the 10B-units goal included.
 
 Run (cluster, SLURM job — never on the login node):
   python -u scripts/download_cpt_data.py --phase all --out $SCRATCH/data
@@ -20,17 +27,19 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import sys
 import time
 from pathlib import Path
 
-# parquet GB targets (FineWeb calibration: 30.1GB parquet ~= 9.18B units)
-TARGET_GB_DCLM = 22.0          # ~6B units (60% of 10B) + headroom
-TARGET_GB_EDU = 15.0           # ~4B units post-dedup (40%) + headroom
+TARGET_TEXT_GB_DCLM = 33.0     # ~6.6B units (60% of 10B) + headroom
+TARGET_TEXT_GB_EDU = 22.0      # ~4.4B units post-dedup (40%) + headroom
 TARGET_GB_FINEMATH = 2.0
 TARGET_GB_STACKEDU_PER_LANG = 1.0
 STACK_EDU_LANGS = ["Python", "JavaScript", "Markdown"]
 FW10BT_FILES = [f"sample/10BT/{i:03d}_00000.parquet" for i in range(14)]  # 000..013
+DCLM_REPO = "mlfoundations/dclm-baseline-1.0"
+EDU_REPO = "HuggingFaceFW/fineweb-edu"
 
 GB = 1024 ** 3
 
@@ -50,20 +59,20 @@ class Rate:
         self.done = 0
         self.target = target_bytes
 
-    def beat(self, path: str, size: int) -> None:
-        self.done += size
+    def beat(self, label: str, amount: int) -> None:
+        self.done += amount
         el = max(time.time() - self.t0, 1e-9)
         rate = self.done / el / 1e6
         eta = (self.target - self.done) / max(self.done / el, 1e-9) / 60
-        log(f"  {Path(path).name} +{size/GB:.2f}GB | cum {self.done/GB:.1f}/"
-            f"{self.target/GB:.0f}GB | {rate:.0f} MB/s | ETA {eta:.0f} min")
+        log(f"  {label} | cum {self.done/GB:.1f}/{self.target/GB:.0f}GB | "
+            f"{rate:.0f} MB/s | ETA {eta:.0f} min")
 
 
-def list_parquets(api, repo: str, prefix: str) -> list[str]:
+def list_files(api, repo: str, prefix: str, suffix: str) -> list[str]:
     files = api.list_repo_files(repo, repo_type="dataset")
-    out = sorted(f for f in files if f.startswith(prefix) and f.endswith(".parquet"))
+    out = sorted(f for f in files if f.startswith(prefix) and f.endswith(suffix))
     if not out:
-        raise RuntimeError(f"{repo}: no parquet under {prefix!r}")
+        raise RuntimeError(f"{repo}: no {suffix} under {prefix!r}")
     return out
 
 
@@ -72,6 +81,14 @@ def dl(api, repo: str, fn: str, raw_dir: Path) -> Path:
     p = hf_hub_download(repo_id=repo, filename=fn, repo_type="dataset",
                         local_dir=str(raw_dir))
     return Path(p)
+
+
+def load_progress(path: Path) -> dict:
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def save_progress(path: Path, prog: dict) -> None:
+    path.write_text(json.dumps(prog))
 
 
 def phase_fw10bt_ids(api, out: Path) -> Path:
@@ -105,22 +122,45 @@ def load_id_set(ids_path: Path) -> set[int]:
 
 
 def phase_dclm(api, out: Path) -> None:
-    raw = out / "cpt_dclm"
-    raw.mkdir(parents=True, exist_ok=True)
-    done = sum(p.stat().st_size for p in raw.rglob("*.parquet"))
-    target = TARGET_GB_DCLM * GB
+    import io
+    import zstandard as zstd
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    dst = out / "cpt_dclm"
+    dst.mkdir(parents=True, exist_ok=True)
+    prog_path = dst / ".progress.json"
+    prog = load_progress(prog_path)
+    target = TARGET_TEXT_GB_DCLM * GB
+    done = sum(v["text_bytes"] for v in prog.values())
     rate = Rate(target)
     rate.done = done
-    for fn in list_parquets(api, "mlfoundations/dclm-baseline-1.0", "global-shard_"):
+    for fn in list_files(api, DCLM_REPO, "global-shard_01_of_10/", ".jsonl.zst"):
         if done >= target:
             break
-        if (raw / fn).exists():
+        if fn in prog:
             continue
-        p = dl(api, "mlfoundations/dclm-baseline-1.0", fn, raw)
-        size = p.stat().st_size
-        done += size
-        rate.beat(fn, size)
-    log(f"[dclm] total {done/GB:.1f} GB in {raw}")
+        p = dl(api, DCLM_REPO, fn, out / "raw" / "dclm")
+        zsize = p.stat().st_size
+        texts: list[str] = []
+        dctx = zstd.ZstdDecompressor()
+        with open(p, "rb") as fh, dctx.stream_reader(fh) as rdr:
+            for line in io.TextIOWrapper(rdr, encoding="utf-8", errors="replace"):
+                line = line.strip()
+                if not line:
+                    continue
+                rec = json.loads(line)
+                t = rec.get("text") or rec.get("content")
+                if t:
+                    texts.append(t)
+        tb = sum(len(t.encode("utf-8")) for t in texts)
+        out_path = dst / (Path(fn).name.replace(".jsonl.zst", "") + ".parquet")
+        pq.write_table(pa.table({"text": pa.array(texts)}), out_path)
+        p.unlink()
+        prog[fn] = {"text_bytes": tb, "rows": len(texts)}
+        save_progress(prog_path, prog)
+        done += tb
+        rate.beat(f"{Path(fn).name} (zst {zsize/1e6:.0f}MB, {len(texts)} docs)", tb)
+    log(f"[dclm] total text {done/GB:.1f} GB in {dst}")
 
 
 def phase_fweb_edu(api, out: Path, ids_path: Path) -> None:
@@ -129,42 +169,49 @@ def phase_fweb_edu(api, out: Path, ids_path: Path) -> None:
     dst = out / "cpt_fweb_edu"
     dst.mkdir(parents=True, exist_ok=True)
     raw = out / "raw" / "fineweb-edu"
+    prog_path = dst / ".progress.json"
+    prog = load_progress(prog_path)
     seen = load_id_set(ids_path)
     log(f"[fweb_edu] loaded {len(seen)} seen id-hashes")
-    done = sum(p.stat().st_size for p in dst.rglob("*.parquet"))
-    target = TARGET_GB_EDU * GB
+    target = TARGET_TEXT_GB_EDU * GB
+    done = sum(v["text_bytes"] for v in prog.values())
     rate = Rate(target)
     rate.done = done
     n_in = n_kept = 0
-    for fn in list_parquets(api, "HuggingFaceFW/fineweb-edu", "data/"):
+    for fn in list_files(api, EDU_REPO, "data/", ".parquet"):
         if done >= target:
             break
-        rel = Path(fn).name
-        out_path = dst / f"{len(list(dst.glob('*.parquet'))):04d}_{rel}"
-        if out_path.exists():
+        if fn in prog:
             continue
-        p = dl(api, "HuggingFaceFW/fineweb-edu", fn, raw)
+        p = dl(api, EDU_REPO, fn, raw)
         pf = pq.ParquetFile(p)
+        out_path = dst / f"{len(prog):04d}_{Path(fn).name}"
         writer = None
+        tb = 0
+        rows_in = rows_kept = 0
         for rb in pf.iter_batches(batch_size=50_000):
             tbl = pa.Table.from_batches([rb])
             masks = [id_hash(s) not in seen for s in tbl.column("id").to_pylist()]
-            n_in += len(masks)
+            rows_in += len(masks)
             filt = tbl.filter(pa.array(masks))
-            n_kept += filt.num_rows
+            rows_kept += filt.num_rows
             if filt.num_rows:
+                tb += sum(len(t.encode("utf-8"))
+                          for t in filt.column("text").to_pylist())
                 if writer is None:
                     writer = pq.ParquetWriter(out_path, filt.schema)
                 writer.write_table(filt)
         if writer is not None:
             writer.close()
-        size = p.stat().st_size
         p.unlink()  # raw copy deleted; filtered copy stays
-        if out_path.exists():
-            done += out_path.stat().st_size
-        rate.beat(fn, size)
-        log(f"  [fweb_edu] keep ratio so far {n_kept/max(n_in,1):.3f}")
-    log(f"[fweb_edu] total {done/GB:.1f} GB (kept {n_kept}/{n_in} rows) in {dst}")
+        n_in += rows_in
+        n_kept += rows_kept
+        prog[fn] = {"text_bytes": tb, "rows_in": rows_in, "rows_kept": rows_kept}
+        save_progress(prog_path, prog)
+        done += tb
+        rate.beat(f"{Path(fn).name} (keep {rows_kept}/{rows_in})", tb)
+    log(f"[fweb_edu] total text {done/GB:.1f} GB kept "
+        f"({n_kept}/{n_in} rows = {n_kept/max(n_in,1):.3f}) in {dst}")
 
 
 def _normalize_write(src: Path, dst: Path) -> int:
@@ -204,7 +251,7 @@ def phase_anneal(api, out: Path) -> None:
         target = target_gb * GB
         rate = Rate(target)
         rate.done = done
-        for fn in list_parquets(api, repo, prefix):
+        for fn in list_files(api, repo, prefix, ".parquet"):
             if done >= target:
                 break
             out_path = dst_dir / Path(fn).name
@@ -222,7 +269,7 @@ def phase_anneal(api, out: Path) -> None:
 def phase_sft(api, out: Path) -> None:
     dst = out / "sft" / "smol-smoltalk"
     dst.mkdir(parents=True, exist_ok=True)
-    files = list_parquets(api, "HuggingFaceTB/smol-smoltalk", "data/")
+    files = list_files(api, "HuggingFaceTB/smol-smoltalk", "data/", ".parquet")
     total = 0
     rate = Rate(2.0 * GB)
     for fn in files:
