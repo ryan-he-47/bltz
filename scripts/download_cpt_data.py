@@ -127,14 +127,24 @@ def load_id_set(ids_path: Path) -> set[int]:
     return set(pq.read_table(ids_path).column("id_hash").to_pylist())
 
 
-def _zst_jsonl_texts(src: Path) -> list[str]:
-    """Stream-decompress .json.zst (JSONL) and extract text/content fields."""
+def _local_jsonl_texts(src: Path, max_text_bytes: int = 0) -> list[str]:
+    """Parse a local JSONL file (.gz/.zst/plain), extracting text/content
+    fields; early stop at max_text_bytes (0 = no limit)."""
+    import gzip
     import io
     import zstandard as zstd
     texts: list[str] = []
-    dctx = zstd.ZstdDecompressor()
-    with open(src, "rb") as fh, dctx.stream_reader(fh) as rdr:
-        for line in io.TextIOWrapper(rdr, encoding="utf-8", errors="replace"):
+    acc = 0
+    name = src.name
+    raw = open(src, "rb")
+    if name.endswith(".gz"):
+        stream = gzip.GzipFile(fileobj=raw)
+    elif name.endswith(".zst"):
+        stream = zstd.ZstdDecompressor().stream_reader(raw)
+    else:
+        stream = raw
+    with raw, stream:
+        for line in io.TextIOWrapper(stream, encoding="utf-8", errors="replace"):
             line = line.strip()
             if not line:
                 continue
@@ -142,6 +152,9 @@ def _zst_jsonl_texts(src: Path) -> list[str]:
             t = rec.get("text") or rec.get("content")
             if t:
                 texts.append(t)
+                acc += len(t.encode("utf-8"))
+                if max_text_bytes and acc >= max_text_bytes:
+                    break
     return texts
 
 
@@ -163,7 +176,7 @@ def phase_dclm(api, out: Path) -> None:
             continue
         p = dl(api, DCLM_REPO, fn, out / "raw" / "dclm")
         zsize = p.stat().st_size
-        texts = _zst_jsonl_texts(p)
+        texts = _local_jsonl_texts(p)
         tb = sum(len(t.encode("utf-8")) for t in texts)
         out_path = dst / (Path(fn).name.replace(".jsonl.zst", "") + ".parquet")
         pq.write_table(pa.table({"text": pa.array(texts)}), out_path)
@@ -305,39 +318,6 @@ def phase_anneal(api, out: Path) -> None:
             f"{out_path.stat().st_size/1e6:.0f} MB (src {size/1e6:.0f} MB)")
 
 
-def _stream_hf_jsonl_texts(repo: str, fn: str, max_text_bytes: int) -> list[str]:
-    """Stream one remote JSONL(.gz/.zst) from HF via HfFileSystem with early
-    stop at max_text_bytes — avoids downloading multi-GB files wholesale
-    (dolmino pes2o/wiki are 4.3GB gz each; we need ~2GB text per sub)."""
-    import gzip
-    import io
-    import zstandard as zstd
-    from huggingface_hub import HfFileSystem
-    fs = HfFileSystem()
-    texts: list[str] = []
-    acc = 0
-    raw = fs.open(f"datasets/{repo}/{fn}", "rb")
-    if fn.endswith(".gz"):
-        stream = gzip.GzipFile(fileobj=raw)
-    elif fn.endswith(".zst"):
-        stream = zstd.ZstdDecompressor().stream_reader(raw)
-    else:
-        stream = raw
-    with raw, stream:
-        for line in io.TextIOWrapper(stream, encoding="utf-8", errors="replace"):
-            line = line.strip()
-            if not line:
-                continue
-            rec = json.loads(line)
-            t = rec.get("text") or rec.get("content")
-            if t:
-                texts.append(t)
-                acc += len(t.encode("utf-8"))
-                if acc >= max_text_bytes:
-                    break
-    return texts
-
-
 DOLMINO_REPO = "allenai/dolmino-mix-1124"
 DOLMINO_SUBS = [("data/dclm/", "dclm"), ("data/pes2o/", "pes2o"),
                 ("data/wiki/", "wiki"), ("data/stackexchange/", "stackexchange")]
@@ -379,11 +359,16 @@ def phase_dolmino(api, out: Path) -> None:
                 break
             if fn in prog:
                 continue
-            texts = _stream_hf_jsonl_texts(DOLMINO_REPO, fn, target - done)
+            # whole-file download (hf_hub_download 自带健壮重试; HfFileSystem
+            # 流式对本链路 xet 后端反复 read timeout, 2026-10-18 实测) then
+            # local parse with early stop; raw deleted right after.
+            p = dl(api, DOLMINO_REPO, fn, out / "raw" / "dolmino")
+            texts = _local_jsonl_texts(p, target - done)
             tb = sum(len(t.encode("utf-8")) for t in texts)
             out_path = dst_dir / (Path(fn).name.split(".")[0] + ".parquet")
             if texts:
                 pq.write_table(pa.table({"text": pa.array(texts)}), out_path)
+            p.unlink()
             prog[fn] = {"text_bytes": tb, "rows": len(texts)}
             save_progress(prog_path, prog)
             done += tb
