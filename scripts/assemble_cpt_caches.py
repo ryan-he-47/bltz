@@ -105,6 +105,13 @@ def main() -> None:
     main_total = report("main", main_groups)
     link_all(data / "cpt_cache_main",
              main_groups["dclm"] + main_groups["fweb_edu"])
+    # hard gate (auto-chain safety, 2026-10-18): if the main cache is short the
+    # cache-build job FAILS -> smoke/formal dependencies never fire -> the
+    # failure itself is the alarm (no polling needed).
+    if main_total < 9.5e9:
+        raise SystemExit(
+            f"[gate] cpt_cache_main only {main_total/1e9:.2f}B units (< 9.5B); "
+            "refusing to green-light the chain")
 
     # ---- anneal mix ---------------------------------------------------------
     log("\n== cpt_cache_anneal ==")
