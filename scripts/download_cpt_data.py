@@ -305,37 +305,90 @@ def phase_anneal(api, out: Path) -> None:
             f"{out_path.stat().st_size/1e6:.0f} MB (src {size/1e6:.0f} MB)")
 
 
+def _stream_hf_jsonl_texts(repo: str, fn: str, max_text_bytes: int) -> list[str]:
+    """Stream one remote JSONL(.gz/.zst) from HF via HfFileSystem with early
+    stop at max_text_bytes — avoids downloading multi-GB files wholesale
+    (dolmino pes2o/wiki are 4.3GB gz each; we need ~2GB text per sub)."""
+    import gzip
+    import io
+    import zstandard as zstd
+    from huggingface_hub import HfFileSystem
+    fs = HfFileSystem()
+    texts: list[str] = []
+    acc = 0
+    raw = fs.open(f"datasets/{repo}/{fn}", "rb")
+    if fn.endswith(".gz"):
+        stream = gzip.GzipFile(fileobj=raw)
+    elif fn.endswith(".zst"):
+        stream = zstd.ZstdDecompressor().stream_reader(raw)
+    else:
+        stream = raw
+    with raw, stream:
+        for line in io.TextIOWrapper(stream, encoding="utf-8", errors="replace"):
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            t = rec.get("text") or rec.get("content")
+            if t:
+                texts.append(t)
+                acc += len(t.encode("utf-8"))
+                if acc >= max_text_bytes:
+                    break
+    return texts
+
+
+DOLMINO_REPO = "allenai/dolmino-mix-1124"
+DOLMINO_SUBS = [("data/dclm/", "dclm"), ("data/pes2o/", "pes2o"),
+                ("data/wiki/", "wiki"), ("data/stackexchange/", "stackexchange")]
+TARGET_TEXT_GB_DOLMINO_PER_SUB = 2.0   # ~2GB text ≈ 1.3GB parquet; 4 subs ≈ 1.6B units
+
+
 def phase_dolmino(api, out: Path) -> None:
-    """Dolmino high-quality web fill for the decay tail (10-18 拍板 §3.4):
-    dclm/pes2o/wiki/stackexchange slices; math subdir skipped (FineMath covers
-    math at the approved 5%), flan skipped (instruction format, SFT handles it).
-    Dolmino files are .json.zst (same as DCLM) ~750MB each.
+    """Dolmino high-quality web fill for the decay tail (10-18 拍板 §3.4).
+    Skips math (FineMath covers 5%) and flan (instruction format, SFT later).
+    done accounting = text bytes; existing dirs seeded with text ≈ 1.54 ×
+    parquet bytes (FineWeb 标定 46GB text / 30GB parquet).
     """
     import pyarrow as pa
     import pyarrow.parquet as pq
     base = out / "cpt_anneal"
-    for prefix, sub in [("data/dclm/", "dclm"), ("data/pes2o/", "pes2o"),
-                        ("data/wiki/", "wiki"), ("data/stackexchange/", "stackexchange")]:
+    for prefix, sub in DOLMINO_SUBS:
         dst_dir = base / f"dolmino_{sub}"
         dst_dir.mkdir(parents=True, exist_ok=True)
-        done = sum(p.stat().st_size for p in dst_dir.glob("*.parquet"))
-        target = 1.3 * GB
+        prog_path = dst_dir / ".progress.json"
+        prog = load_progress(prog_path)
+        if not prog:  # seed from previously converted parquets (if any)
+            seed = int(sum(p.stat().st_size for p in dst_dir.glob("*.parquet")) * 1.54)
+            if seed:
+                prog["_seed"] = {"text_bytes": seed}
+                save_progress(prog_path, prog)
+        done = sum(v["text_bytes"] for v in prog.values())
+        target = TARGET_TEXT_GB_DOLMINO_PER_SUB * GB
         rate = Rate(target)
         rate.done = done
-        for fn in list_files(api, "allenai/dolmino-mix-1124", prefix, ".json.zst"):
+        files = sorted(
+            f for f in api.list_repo_files(DOLMINO_REPO, repo_type="dataset")
+            if f.startswith(prefix) and f.endswith((".json.zst", ".json.gz",
+                                                    ".jsonl.zst", ".jsonl.gz"))
+        )
+        if not files:
+            raise RuntimeError(f"{DOLMINO_REPO}: no jsonl files under {prefix!r}")
+        for fn in files:
             if done >= target:
                 break
-            out_path = dst_dir / (Path(fn).name.replace(".json.zst", "") + ".parquet")
-            if out_path.exists():
+            if fn in prog:
                 continue
-            p = dl(api, "allenai/dolmino-mix-1124", fn, out / "raw" / "dolmino")
-            size = p.stat().st_size
-            texts = _zst_jsonl_texts(p)
-            pq.write_table(pa.table({"text": pa.array(texts)}), out_path)
-            p.unlink()
-            done += out_path.stat().st_size
-            rate.beat(fn, size)
-        log(f"[dolmino:{sub}] total {done/GB:.1f} GB")
+            texts = _stream_hf_jsonl_texts(DOLMINO_REPO, fn, target - done)
+            tb = sum(len(t.encode("utf-8")) for t in texts)
+            out_path = dst_dir / (Path(fn).name.split(".")[0] + ".parquet")
+            if texts:
+                pq.write_table(pa.table({"text": pa.array(texts)}), out_path)
+            prog[fn] = {"text_bytes": tb, "rows": len(texts)}
+            save_progress(prog_path, prog)
+            done += tb
+            rate.beat(f"{sub}/{Path(fn).name} ({len(texts)} docs)", tb)
+        log(f"[dolmino:{sub}] total text {done/GB:.1f} GB")
 
 
 def phase_sft(api, out: Path) -> None:
