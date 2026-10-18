@@ -21,6 +21,10 @@ PY=/gpfs1/home/yihe47/miniconda3/envs/cose2/bin/python
 cd "$REPO"
 git pull --ff-only || echo "[dl] git pull failed, using existing checkout"
 
+# gated repos (the-stack-smol/BigCode) need auth; token file is 600 perms and
+# NEVER leaves the cluster (AGENTS: 工作区禁存).
+export HF_TOKEN=$(cat /gpfs1/scratch/yihe47/bltz/hf_cache/token)
+
 $PY -u scripts/download_cpt_data.py --phase all --out "$SCRATCH/data"
 
 echo "[done] CPT data download finished; log at $REPO/logs (see .out above)"
