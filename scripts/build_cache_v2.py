@@ -90,68 +90,72 @@ def main() -> None:
     max_docs = int(getattr(b, "max_docs_per_file", 0)) if b else 0
     parquet_dir = getattr(b, "parquet_dir", "") if b else ""
     only_files = getattr(b, "only_files", "") if b else ""  # e.g. "0" or "0,3"
+    src_dir = str(getattr(b, "src_dir", "") if b else "")   # CPT: dir of parquets
+    shard_offset = int(getattr(b, "shard_offset", 0)) if b else 0
     cache_dir = cfg.data.cache_dir
     os.makedirs(cache_dir, exist_ok=True)
 
-    if str(only_files).strip():  # "0" alone is a valid selection (int 0 is falsy!)
-        want = [int(x) for x in str(only_files).split(",") if x.strip()]
-        todo = []
-        for i in want:
-            d = _shard_dir(cache_dir, i)
-            if os.path.exists(os.path.join(d, "meta.json")):
-                print(f"shard-{i:05d} already complete, skip")
-                continue
-            if os.path.isdir(d):
-                shutil.rmtree(d)
-            todo.append(i)
+    jobs: list[tuple[int, str]] = []  # (shard_idx, parquet_path)
+    if src_dir:
+        files = sorted(str(p) for p in Path(src_dir).rglob("*.parquet"))
+        if not files:
+            raise FileNotFoundError(f"no parquet under {src_dir}")
+        for i, p in enumerate(files):
+            jobs.append((shard_offset + i, p))
+        print(f"phase 1: {len(jobs)} parquets from {src_dir} "
+              f"(shard offset {shard_offset})", flush=True)
     else:
-        todo = []
-        for i in range(N_FILES):
-            d = _shard_dir(cache_dir, i)
-            if os.path.exists(os.path.join(d, "meta.json")):
-                continue
-            if os.path.isdir(d):
-                shutil.rmtree(d)
-            todo.append(i)
+        if str(only_files).strip():  # "0" alone is a valid selection (int 0 is falsy!)
+            want = [int(x) for x in str(only_files).split(",") if x.strip()]
+        else:
+            want = list(range(N_FILES))
+        paths: dict[int, str] = {}
+        if parquet_dir:
+            for i in want:
+                p = os.path.join(parquet_dir, f"{i:03d}_00000.parquet")
+                if not os.path.exists(p):
+                    raise FileNotFoundError(f"missing local parquet: {p}")
+                paths[i] = p
+            print(f"phase 1: using local parquet dir {parquet_dir}", flush=True)
+        else:
+            from huggingface_hub import hf_hub_download
+            for i in want:
+                fn = f"sample/10BT/{i:03d}_00000.parquet"
+                print(f"phase 1: downloading {fn} ...", flush=True)
+                paths[i] = hf_hub_download(
+                    repo_id="HuggingFaceFW/fineweb-edu", filename=fn, repo_type="dataset"
+                )
+        print("phase 1 done", flush=True)
+        jobs = [(i, paths[i]) for i in want]
+
+    todo: list[tuple[int, str]] = []
+    for idx, p in jobs:
+        d = _shard_dir(cache_dir, idx)
+        if os.path.exists(os.path.join(d, "meta.json")):
+            continue
+        if os.path.isdir(d):
+            shutil.rmtree(d)
+        todo.append((idx, p))
     if not todo:
-        print("cache already complete (all 14 shards have meta.json); nothing to do")
+        print(f"cache already complete (all {len(jobs)} shards have meta.json); nothing to do")
         return
-    print(f"shards to build: {todo}", flush=True)
+    print(f"shards to build: {[i for i, _ in todo]}", flush=True)
 
-    paths: dict[int, str] = {}
-    if parquet_dir:
-        for i in todo:
-            p = os.path.join(parquet_dir, f"{i:03d}_00000.parquet")
-            if not os.path.exists(p):
-                raise FileNotFoundError(f"missing local parquet: {p}")
-            paths[i] = p
-        print(f"phase 1: using local parquet dir {parquet_dir}", flush=True)
-    else:
-        from huggingface_hub import hf_hub_download
-
-        for i in todo:
-            fn = f"sample/10BT/{i:03d}_00000.parquet"
-            print(f"phase 1: downloading {fn} ...", flush=True)
-            paths[i] = hf_hub_download(
-                repo_id="HuggingFaceFW/fineweb-edu", filename=fn, repo_type="dataset"
-            )
-    print("phase 1 done", flush=True)
-
-    jobs = [
-        (i, paths[i], _shard_dir(cache_dir, i), max_docs, cfg.seg.to_dict())
-        for i in todo
+    jobs_args = [
+        (i, p, _shard_dir(cache_dir, i), max_docs, cfg.seg.to_dict())
+        for i, p in todo
     ]
     t0 = time.time()
-    if workers <= 1 or len(jobs) == 1:
-        for j in jobs:
+    if workers <= 1 or len(jobs_args) == 1:
+        for j in jobs_args:
             meta = _process_file(j)
             print(f"shard-{meta['file_idx']:05d}: {meta['n_units']} units, "
                   f"{meta['n_bytes']/2**20:.0f} MiB, {meta['n_docs']} docs, {meta['sec']}s", flush=True)
     else:
         import multiprocessing as mp
 
-        with mp.Pool(min(workers, len(jobs))) as pool:
-            for meta in pool.imap_unordered(_process_file, jobs):
+        with mp.Pool(min(workers, len(jobs_args))) as pool:
+            for meta in pool.imap_unordered(_process_file, jobs_args):
                 print(f"shard-{meta['file_idx']:05d}: {meta['n_units']} units, "
                       f"{meta['n_bytes']/2**20:.0f} MiB, {meta['n_docs']} docs, {meta['sec']}s", flush=True)
     print(f"phase 2 done in {time.time()-t0:.0f}s; cache at {cache_dir}", flush=True)
