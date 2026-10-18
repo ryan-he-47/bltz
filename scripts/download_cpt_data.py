@@ -239,34 +239,59 @@ def _normalize_write(src: Path, dst: Path) -> int:
     return n
 
 
+def _json_to_text_parquet(src: Path, dst: Path) -> int:
+    """JSONL (one json object per line) -> parquet with a single `text` column."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    texts: list[str] = []
+    with open(src, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            t = rec.get("content") or rec.get("text")
+            if t:
+                texts.append(t)
+    pq.write_table(pa.table({"text": pa.array(texts)}), dst)
+    return len(texts)
+
+
 def phase_anneal(api, out: Path) -> None:
     base = out / "cpt_anneal"
-    for repo, prefix, target_gb, sub in [
-        ("HuggingFaceTB/finemath", "finemath-4plus/", TARGET_GB_FINEMATH, "finemath"),
-    ] + [
-        (STACK_REPO, f"data/{lang}/", TARGET_GB_STACKEDU_PER_LANG,
-         f"stack_edu_{lang}")
-        for lang in STACK_EDU_LANGS
-    ]:
-        dst_dir = base / sub
+    # finemath-4plus (parquet shards)
+    dst_dir = base / "finemath"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    done = sum(p.stat().st_size for p in dst_dir.glob("*.parquet"))
+    target = TARGET_GB_FINEMATH * GB
+    rate = Rate(target)
+    rate.done = done
+    for fn in list_files(api, "HuggingFaceTB/finemath", "finemath-4plus/", ".parquet"):
+        if done >= target:
+            break
+        out_path = dst_dir / Path(fn).name
+        if out_path.exists():
+            continue
+        p = dl(api, "HuggingFaceTB/finemath", fn, out / "raw" / "finemath")
+        _normalize_write(p, out_path)
+        size = p.stat().st_size
+        p.unlink()
+        done += out_path.stat().st_size
+        rate.beat(fn, size)
+    log(f"[anneal:finemath] total {done/GB:.1f} GB")
+    # the-stack-smol (one data.json per language dir, JSONL with `content`)
+    for lang in STACK_EDU_LANGS:
+        dst_dir = base / f"stack_edu_{lang}"
         dst_dir.mkdir(parents=True, exist_ok=True)
-        done = sum(p.stat().st_size for p in dst_dir.glob("*.parquet"))
-        target = target_gb * GB
-        rate = Rate(target)
-        rate.done = done
-        for fn in list_files(api, repo, prefix, ".parquet"):
-            if done >= target:
-                break
-            out_path = dst_dir / Path(fn).name
-            if out_path.exists():
-                continue
-            p = dl(api, repo, fn, out / "raw" / repo.split("/")[-1])
-            _normalize_write(p, out_path)
-            size = p.stat().st_size
-            p.unlink()
-            done += out_path.stat().st_size
-            rate.beat(fn, size)
-        log(f"[anneal:{sub}] total {done/GB:.1f} GB")
+        out_path = dst_dir / f"{lang}.parquet"
+        if out_path.exists():
+            continue
+        p = dl(api, STACK_REPO, f"data/{lang}/data.json", out / "raw" / "the-stack-smol")
+        n = _json_to_text_parquet(p, out_path)
+        size = p.stat().st_size
+        p.unlink()
+        log(f"[anneal:stack_edu_{lang}] {n} docs, "
+            f"{out_path.stat().st_size/1e6:.0f} MB (json {size/1e6:.0f} MB)")
 
 
 def phase_dolmino(api, out: Path) -> None:
