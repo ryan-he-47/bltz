@@ -15,7 +15,7 @@
 | 3 | **分支点** | `word_05b_p2/ckpt_pre_decay.pt`(step 45429,稳定段末尾,weight-only) | WSD 标准分支点;re-warm 后重新安排完整稳定段+新退火尾 |
 | 4 | **主力语料** | **60% DCLM-baseline + 40% FineWeb-Edu** | SmolLM2 消融组合;Edu 必须按 id 剔除已用 sample-10BT 交集(§1.2) |
 | 5 | **旧数据回放** | **不回放(零回放)** | 用户理由:新数据 40% 为 FineWeb-Edu,属同族续训,漂移小;文献亦允许(同域零回放可接受) |
-| 6 | **退火段混入** | **是,末 ~10% 步数混数学/代码** | FineMath/Stack-Edu/Dolmino 抽样;**前置项:AE 对数学/代码文本重建质量验证**(§3.3) |
+| 6 | **退火段混入** | 末 ~10% 步数混:**代码 10% + 数学 5% + Dolmino 高质量 web 补足**(10-18 AE 探针后修订,§3.3/§3.4) | AE 探针:code EM 96.3% 可混;math EM 86.0%(LaTeX 括号/反斜杠 14% unit 损坏)→ 数学占比压到 5% |
 | 7 | **SFT 配方** | **先纯通用 SFT(smol-smoltalk 全量 ~460k)**,上 benchmark 验秤看字节能力是否涌现;不行再考虑字节任务特化(字符合成) | 字符合成数据暂缓,不作为首发组分 |
 | 8 | **评测基建** | lm-eval-harness 接入服务于全链路验收:「S 档续训+通用 SFT 跑通 = 全链路首个模型」 | 续训 4 天窗口内并行搭建(1-2 天工作量),续训验收前就绪 |
 
@@ -28,9 +28,9 @@
 |---|---|---|---|---|---|
 | 主力 60% | DCLM-baseline | `mlfoundations/dclm-baseline-1.0` | ~7.5B tokens 切片 | ~30GB 文本 | `$SCRATCH/data/cpt_dclm/` |
 | 主力 40% | FineWeb-Edu | `HuggingFaceFW/fineweb-edu` | ~5B tokens 切片 | ~20GB 文本 | `$SCRATCH/data/cpt_fweb_edu/` |
-| 退火段 | FineMath(4+) | `HuggingFaceTB/finemath` | ~0.5-1B tokens 抽样 | ~2-4GB | `$SCRATCH/data/cpt_anneal/` |
-| 退火段 | Stack-Edu | `HuggingFaceTB/stack-edu` | ~0.3-0.5B tokens 抽样 | ~1-2GB | 同上 |
-| 退火段(可选) | Dolmino Mix 1124 | `allenai/dolmino-mix-1124` | 抽样补充 | ~1GB | 同上 |
+| 退火段 | FineMath(4+) | `HuggingFaceTB/finemath` | ~0.25GB 文本(数学 5% 配比) | ~2GB | `$SCRATCH/data/cpt_anneal/` |
+| 退火段 | Stack-Edu | `HuggingFaceTB/stack-edu` | ~0.5GB 文本(代码 10% 配比) | ~1-2GB | 同上 |
+| 退火段 | Dolmino 高质量 web | `allenai/dolmino-mix-1124` | dclm/pes2o/wiki/stackexchange 各 ~1.3GB | ~5GB | 同上 |
 | SFT(后阶段) | smol-smoltalk | `HuggingFaceTB/smol-smoltalk` | 全量 ~460k 样本 | ~2GB | `$SCRATCH/data/sft/` |
 
 - **格式**:parquet,必须带 `text` 列(缓存构建管线 `build_cache_v2.py` 直接
@@ -74,8 +74,8 @@
   per-GPU batch 24,S=4096,2×V100 DDP);10B units ≈ **~50863 步**,
   ~11 s/步 → 全程 ≈ 93.5h ≈ 4 天(2 个 72h job,wall-out 自动续投配方
   沿用 p2 验证版,docs/41 §6.4)。
-- **退火尾**:decay_frac ≈ 0.10(末 ~5100 步),退火段数据混入 10-20%
-  数学/代码(§3.3)。
+- **退火尾**:decay_frac ≈ 0.10(末 ~5100 步 ≈ 1B units),混入配比按
+  §3.4 定稿(代码 10% + 数学 5% + Dolmino web 85%)。
 - **fp16 纪律不变**:init_scale=1024 + growth_interval=500;V100 禁 bf16。
 - **数据序**:ShardRotator 块级轮换(resident=2,every=2000,mem 64G;
   p1 实测口径)。新语料 60:40 通过 shard 数量比例落实。
@@ -88,16 +88,33 @@
 2. **LR 语义**:同数值 2e-4,但含义从「同 run 平台延续」变为「新数据 CPT
    的 re-warm 目标」——风险监控见 §6。
 
-### 3.3 退火段数学/代码混入的前置验证(硬门前置)
+### 3.3 退火段数学/代码混入的前置验证(硬门前置)——**已执行(2026-10-18)**
 
-AE 是 FineWeb 网页文本训的,数学(LaTeX/公式)与代码 latent 分布可能 OOD。
-**混入比例落地前必须做小批量重建验证**(本机可做,AE 权重本地有
-`checkpoints/ae_48_256_word_full/best.pt`):
-- 探针集:数学文本(LaTeX 段落/算式)、代码(Python/JS 片段)各数百条,
-  对照英文网页文本;
-- 判读:AE 重建 EM/编辑距离 vs 网页文本水位;若严重退化(如 EM 塌方),
-  退回「不混/少混」并回报用户复议;
-- 工具:diag_ae 系列脚本改造或新探针脚本;结果回填 docs/39。
+AE 是 FineWeb 网页文本训的,数学(LaTeX)与代码 latent 分布可能 OOD。
+**探针**:`scripts/probe_ae_ood.py`(本机,AE best@105000;各领域文本经
+segment_word 重切后逐 unit 评测:teacher-forced CE/bacc + 贪婪解码 EM):
+
+| 集合 | n | 均长(B) | CE | byte-acc | 贪婪 EM |
+|---|---|---|---|---|---|
+| cache_val(FineWeb 对照) | 800 | 5.12 | 0.0016 | 0.9994 | **0.9988** |
+| en_prose(英文散文) | 800 | 4.75 | 0.0041 | 0.9986 | **0.9988** |
+| **math(LaTeX)** | 798 | 2.85 | 0.5394 | 0.9372 | **0.8596** |
+| **code(Py/JS/C/shell 混合)** | 568 | 3.99 | 0.0867 | 0.9905 | **0.9630** |
+
+**判读**:code 轻度 OOD(失败模式 `=>`/长连字符/docstring 引号);math
+显著 OOD 但非塌方——失败高度集中于 LaTeX 承重字符(`{`、`}`、`\command`、
+`_{`),14% unit latent 损坏且恰为数学骨架字符。
+
+### 3.4 退火段配比定稿(2026-10-18,用户拍板)
+
+- **代码 10%**(Stack-Edu:Python/JavaScript/Markdown 切片);
+- **数学 5%**(FineMath-4plus 切片)——按探针结果压比例:全退火段损坏
+  unit ≈0.7%,可接受;
+- **其余 ~85% 给 Dolmino 高质量 web**:dclm/pes2o/wiki/stackexchange 切片
+  (跳过 dolmino-math——FineMath 已覆盖;跳过 flan——指令格式留给 SFT);
+- 退火段总长 = 末 ~10% 步数 ≈ 5100 步 ≈ 1B units;各源独立 shard 组,
+  ShardRotator 按比例驻留;
+- 若日后做 M/L 档或重训 AE,再议提高数学占比。
 
 ## 4. 验收计划(续训段)
 

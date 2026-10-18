@@ -266,6 +266,35 @@ def phase_anneal(api, out: Path) -> None:
         log(f"[anneal:{sub}] total {done/GB:.1f} GB")
 
 
+def phase_dolmino(api, out: Path) -> None:
+    """Dolmino high-quality web fill for the decay tail (10-18 拍板 §3.4):
+    dclm/pes2o/wiki/stackexchange slices; math subdir skipped (FineMath covers
+    math at the approved 5%), flan skipped (instruction format, SFT handles it).
+    """
+    base = out / "cpt_anneal"
+    for prefix, sub in [("data/dclm/", "dclm"), ("data/pes2o/", "pes2o"),
+                        ("data/wiki/", "wiki"), ("data/stackexchange/", "stackexchange")]:
+        dst_dir = base / f"dolmino_{sub}"
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        done = sum(p.stat().st_size for p in dst_dir.glob("*.parquet"))
+        target = 1.3 * GB
+        rate = Rate(target)
+        rate.done = done
+        for fn in list_files(api, "allenai/dolmino-mix-1124", prefix, ".parquet"):
+            if done >= target:
+                break
+            out_path = dst_dir / Path(fn).name
+            if out_path.exists():
+                continue
+            p = dl(api, "allenai/dolmino-mix-1124", fn, out / "raw" / "dolmino")
+            _normalize_write(p, out_path)
+            size = p.stat().st_size
+            p.unlink()
+            done += out_path.stat().st_size
+            rate.beat(fn, size)
+        log(f"[dolmino:{sub}] total {done/GB:.1f} GB")
+
+
 def phase_sft(api, out: Path) -> None:
     dst = out / "sft" / "smol-smoltalk"
     dst.mkdir(parents=True, exist_ok=True)
@@ -285,7 +314,8 @@ def phase_sft(api, out: Path) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--phase", default="all",
-                    choices=["all", "fw10bt_ids", "dclm", "fweb_edu", "anneal", "sft"])
+                    choices=["all", "fw10bt_ids", "dclm", "fweb_edu", "anneal",
+                             "dolmino", "sft"])
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     out = Path(args.out)
@@ -298,7 +328,7 @@ def main() -> None:
     log("[net] HF reachable from this node")
 
     ids_path = out / "cpt_ids" / "fw10bt_idhash.parquet"
-    phases = ["fw10bt_ids", "dclm", "fweb_edu", "anneal", "sft"]
+    phases = ["fw10bt_ids", "dclm", "fweb_edu", "anneal", "dolmino", "sft"]
     for ph in phases if args.phase == "all" else [args.phase]:
         marker = out / f".done_{ph}"
         if marker.exists():
@@ -314,6 +344,8 @@ def main() -> None:
             phase_fweb_edu(api, out, ids_path)
         elif ph == "anneal":
             phase_anneal(api, out)
+        elif ph == "dolmino":
+            phase_dolmino(api, out)
         elif ph == "sft":
             phase_sft(api, out)
         marker.touch()
