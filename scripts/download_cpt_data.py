@@ -127,9 +127,25 @@ def load_id_set(ids_path: Path) -> set[int]:
     return set(pq.read_table(ids_path).column("id_hash").to_pylist())
 
 
-def phase_dclm(api, out: Path) -> None:
+def _zst_jsonl_texts(src: Path) -> list[str]:
+    """Stream-decompress .json.zst (JSONL) and extract text/content fields."""
     import io
     import zstandard as zstd
+    texts: list[str] = []
+    dctx = zstd.ZstdDecompressor()
+    with open(src, "rb") as fh, dctx.stream_reader(fh) as rdr:
+        for line in io.TextIOWrapper(rdr, encoding="utf-8", errors="replace"):
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            t = rec.get("text") or rec.get("content")
+            if t:
+                texts.append(t)
+    return texts
+
+
+def phase_dclm(api, out: Path) -> None:
     import pyarrow as pa
     import pyarrow.parquet as pq
     dst = out / "cpt_dclm"
@@ -147,17 +163,7 @@ def phase_dclm(api, out: Path) -> None:
             continue
         p = dl(api, DCLM_REPO, fn, out / "raw" / "dclm")
         zsize = p.stat().st_size
-        texts: list[str] = []
-        dctx = zstd.ZstdDecompressor()
-        with open(p, "rb") as fh, dctx.stream_reader(fh) as rdr:
-            for line in io.TextIOWrapper(rdr, encoding="utf-8", errors="replace"):
-                line = line.strip()
-                if not line:
-                    continue
-                rec = json.loads(line)
-                t = rec.get("text") or rec.get("content")
-                if t:
-                    texts.append(t)
+        texts = _zst_jsonl_texts(p)
         tb = sum(len(t.encode("utf-8")) for t in texts)
         out_path = dst / (Path(fn).name.replace(".jsonl.zst", "") + ".parquet")
         pq.write_table(pa.table({"text": pa.array(texts)}), out_path)
@@ -303,7 +309,10 @@ def phase_dolmino(api, out: Path) -> None:
     """Dolmino high-quality web fill for the decay tail (10-18 拍板 §3.4):
     dclm/pes2o/wiki/stackexchange slices; math subdir skipped (FineMath covers
     math at the approved 5%), flan skipped (instruction format, SFT handles it).
+    Dolmino files are .json.zst (same as DCLM) ~750MB each.
     """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
     base = out / "cpt_anneal"
     for prefix, sub in [("data/dclm/", "dclm"), ("data/pes2o/", "pes2o"),
                         ("data/wiki/", "wiki"), ("data/stackexchange/", "stackexchange")]:
@@ -313,15 +322,16 @@ def phase_dolmino(api, out: Path) -> None:
         target = 1.3 * GB
         rate = Rate(target)
         rate.done = done
-        for fn in list_files(api, "allenai/dolmino-mix-1124", prefix, ".parquet"):
+        for fn in list_files(api, "allenai/dolmino-mix-1124", prefix, ".json.zst"):
             if done >= target:
                 break
-            out_path = dst_dir / Path(fn).name
+            out_path = dst_dir / (Path(fn).name.replace(".json.zst", "") + ".parquet")
             if out_path.exists():
                 continue
             p = dl(api, "allenai/dolmino-mix-1124", fn, out / "raw" / "dolmino")
-            _normalize_write(p, out_path)
             size = p.stat().st_size
+            texts = _zst_jsonl_texts(p)
+            pq.write_table(pa.table({"text": pa.array(texts)}), out_path)
             p.unlink()
             done += out_path.stat().st_size
             rate.beat(fn, size)
