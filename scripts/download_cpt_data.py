@@ -36,13 +36,16 @@ TARGET_TEXT_GB_DCLM = 33.0     # ~6.6B units (60% of 10B) + headroom
 TARGET_TEXT_GB_EDU = 22.0      # ~4.4B units post-dedup (40%) + headroom
 TARGET_GB_FINEMATH = 2.0
 TARGET_GB_STACKEDU_PER_LANG = 1.0
-STACK_EDU_LANGS = ["python", "javascript", "markdown"]  # the-stack-smol dirs
+STACK_EDU_LANGS = ["python", "javascript"]  # code_search_net configs
 FW10BT_FILES = [f"sample/10BT/{i:03d}_00000.parquet" for i in range(14)]  # 000..013
 DCLM_REPO = "mlfoundations/dclm-baseline-1.0"
 EDU_REPO = "HuggingFaceFW/fineweb-edu"
-# 2026-10-18 换源: HuggingFaceTB/stack-edu 只有 blob_id 元数据(正文在 gated
-# StarCoder2 blobs, 不可用) -> bigcode/the-stack-smol(公开, content 列)。
-STACK_REPO = "bigcode/the-stack-smol"
+# 2026-10-18 两轮换源: HuggingFaceTB/stack-edu 只有 blob_id 元数据(正文在
+# gated StarCoder2 blobs); bigcode/the-stack-smol 本身也 gated(BigCode 条款,
+# 403 未授权) -> code-search-net/code_search_net(公开, parquet, per-language,
+# 取 whole_func_string 列)。markdown 无对应语言,从配比中去掉(其散文性质与
+# Dolmino web 重叠)。
+STACK_REPO = "code-search-net/code_search_net"
 
 GB = 1024 ** 3
 
@@ -223,9 +226,10 @@ def _normalize_write(src: Path, dst: Path) -> int:
     import pyarrow.parquet as pq
     pf = pq.ParquetFile(src)
     cols = pf.schema_arrow.names
-    col = "text" if "text" in cols else ("content" if "content" in cols else None)
+    col = next((c for c in ("text", "content", "whole_func_string",
+                            "func_code_string") if c in cols), None)
     if col is None:
-        raise RuntimeError(f"{src}: no text/content column in {cols}")
+        raise RuntimeError(f"{src}: no usable text column in {cols}")
     writer = None
     n = 0
     for rb in pf.iter_batches(batch_size=50_000, columns=[col]):
@@ -279,19 +283,20 @@ def phase_anneal(api, out: Path) -> None:
         done += out_path.stat().st_size
         rate.beat(fn, size)
     log(f"[anneal:finemath] total {done/GB:.1f} GB")
-    # the-stack-smol (one data.json per language dir, JSONL with `content`)
+    # code_search_net (公开, per-language parquet, whole_func_string 列)
     for lang in STACK_EDU_LANGS:
         dst_dir = base / f"stack_edu_{lang}"
         dst_dir.mkdir(parents=True, exist_ok=True)
         out_path = dst_dir / f"{lang}.parquet"
         if out_path.exists():
             continue
-        p = dl(api, STACK_REPO, f"data/{lang}/data.json", out / "raw" / "the-stack-smol")
-        n = _json_to_text_parquet(p, out_path)
+        p = dl(api, STACK_REPO, f"{lang}/train-00000-of-00001.parquet",
+               out / "raw" / "code_search_net")
+        n = _normalize_write(p, out_path)
         size = p.stat().st_size
         p.unlink()
         log(f"[anneal:stack_edu_{lang}] {n} docs, "
-            f"{out_path.stat().st_size/1e6:.0f} MB (json {size/1e6:.0f} MB)")
+            f"{out_path.stat().st_size/1e6:.0f} MB (src {size/1e6:.0f} MB)")
 
 
 def phase_dolmino(api, out: Path) -> None:

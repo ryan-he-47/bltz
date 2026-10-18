@@ -29,11 +29,13 @@
 | 主力 60% | DCLM-baseline | `mlfoundations/dclm-baseline-1.0` | ~7.5B tokens 切片 | ~30GB 文本 | `$SCRATCH/data/cpt_dclm/` |
 | 主力 40% | FineWeb-Edu | `HuggingFaceFW/fineweb-edu` | ~5B tokens 切片 | ~20GB 文本 | `$SCRATCH/data/cpt_fweb_edu/` |
 | 退火段 | FineMath(4+) | `HuggingFaceTB/finemath` | ~0.25GB 文本(数学 5% 配比) | ~2GB | `$SCRATCH/data/cpt_anneal/` |
-| 退火段 | the-stack-smol(**10-18 换源**) | `bigcode/the-stack-smol` | ~0.5GB 文本(代码 10% 配比) | ~1-2GB | 同上 |
+| 退火段 | CodeSearchNet(**10-18 二轮换源**) | `code-search-net/code_search_net` | python+javascript train 切片(代码 10% 配比) | ~0.8GB | 同上 |
 
-> 换源注记:原计划 HuggingFaceTB/stack-edu 实测只有 blob_id 元数据(正文
-> 在 gated StarCoder2 blobs,不可用);the-stack-smol 公开、含 content 列,
-> 取 data/{python,javascript,markdown} 切片。
+> 换源注记:stack-edu 只有 blob_id 元数据(正文在 gated StarCoder2 blobs);
+> the-stack-smol 本身也 gated(BigCode 条款,403 未授权)——BigCode 系全线
+> 需人工点条款,绕道。CodeSearchNet 公开、parquet、per-language
+> (whole_func_string 列);markdown 无对应语言,从配比中去掉(其散文性质
+> 与 Dolmino web 重叠)。
 | 退火段 | Dolmino 高质量 web | `allenai/dolmino-mix-1124` | dclm/pes2o/wiki/stackexchange 各 ~1.3GB | ~5GB | 同上 |
 | SFT(后阶段) | smol-smoltalk | `HuggingFaceTB/smol-smoltalk` | 全量 ~460k 样本 | ~2GB | `$SCRATCH/data/sft/` |
 
@@ -111,7 +113,7 @@ segment_word 重切后逐 unit 评测:teacher-forced CE/bacc + 贪婪解码 EM):
 
 ### 3.4 退火段配比定稿(2026-10-18,用户拍板)
 
-- **代码 10%**(the-stack-smol:python/javascript/markdown 切片;10-18 换源,
+- **代码 10%**(CodeSearchNet:python+javascript 切片;10-18 二轮换源,
   见 §1.1 注记);
 - **数学 5%**(FineMath-4plus 切片)——按探针结果压比例:全退火段损坏
   unit ≈0.7%,可接受;
