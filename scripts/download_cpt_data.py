@@ -36,10 +36,13 @@ TARGET_TEXT_GB_DCLM = 33.0     # ~6.6B units (60% of 10B) + headroom
 TARGET_TEXT_GB_EDU = 22.0      # ~4.4B units post-dedup (40%) + headroom
 TARGET_GB_FINEMATH = 2.0
 TARGET_GB_STACKEDU_PER_LANG = 1.0
-STACK_EDU_LANGS = ["Python", "JavaScript", "Markdown"]
+STACK_EDU_LANGS = ["python", "javascript", "markdown"]  # the-stack-smol dirs
 FW10BT_FILES = [f"sample/10BT/{i:03d}_00000.parquet" for i in range(14)]  # 000..013
 DCLM_REPO = "mlfoundations/dclm-baseline-1.0"
 EDU_REPO = "HuggingFaceFW/fineweb-edu"
+# 2026-10-18 换源: HuggingFaceTB/stack-edu 只有 blob_id 元数据(正文在 gated
+# StarCoder2 blobs, 不可用) -> bigcode/the-stack-smol(公开, content 列)。
+STACK_REPO = "bigcode/the-stack-smol"
 
 GB = 1024 ** 3
 
@@ -241,8 +244,8 @@ def phase_anneal(api, out: Path) -> None:
     for repo, prefix, target_gb, sub in [
         ("HuggingFaceTB/finemath", "finemath-4plus/", TARGET_GB_FINEMATH, "finemath"),
     ] + [
-        ("HuggingFaceTB/stack-edu", f"{lang}/", TARGET_GB_STACKEDU_PER_LANG,
-         f"stack_edu_{lang.lower()}")
+        (STACK_REPO, f"data/{lang}/", TARGET_GB_STACKEDU_PER_LANG,
+         f"stack_edu_{lang}")
         for lang in STACK_EDU_LANGS
     ]:
         dst_dir = base / sub
