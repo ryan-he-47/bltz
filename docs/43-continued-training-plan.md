@@ -116,6 +116,22 @@ segment_word 重切后逐 unit 评测:teacher-forced CE/bacc + 贪婪解码 EM):
   ShardRotator 按比例驻留;
 - 若日后做 M/L 档或重训 AE,再议提高数学占比。
 
+### 3.5 训练实施:两阶段单 sbatch(2026-10-18 定稿)
+
+- **`slurm/bltz_word_cpt_s.sbatch`**:一份 sbatch 内两次 trainer 调用实现
+  中途换数据——**phase A**(`word_cpt_s_stable`,0→45776 步,decay_frac=0
+  纯平台,LR 2e-4,cache=cpt_cache_main,weight-only 自 ckpt_pre_decay 加载
+  +rewarmup 500);**phase B**(`word_cpt_s_anneal`,全态自 A 的 ckpt_full
+  45776 接续→50863,decay_frac=0.1 退到 0,cache=cpt_cache_anneal)。
+  总计 50863 步×196.6k units=10.0B units,退火尾=10.0% 步数。
+  wall-out 自动续投沿用 p2 配方(墙前 300s STOP→近墙自投本文件;
+  phase 完成判定=各自 ckpt_dir 的 last.pt)。预计 ~100h(2 段 72h 墙内)。
+- **冒烟**:`slurm/bltz_word_cpt_smoke.sbatch`(stingy 分区,双缓存各 3 步
+  production 形状:A=weight-only 分支加载,B=全态接续+anneal 缓存),
+  通过后才允许发射正式 run。
+- 退火段数据通过缓存组装即完成配比(docs/43 §2 symlink 组装),训练侧
+  零改动。
+
 ## 4. 验收计划(续训段)
 
 按 docs/42 C 报告 Tier 1 电池,分两层:
@@ -157,11 +173,15 @@ segment_word 重切后逐 unit 评测:teacher-forced CE/bacc + 贪婪解码 EM):
 
 ## 7. 执行序(当前 todo)
 
-1. ☐ **我在集群直接下载 §1.1 数据**(先核 scratch 账;SLURM job/后台,不占登录节点);
-2. ☐ AE 数学/代码重建探针(本机,不依赖下载,可立即开工);
-3. ☐ FineWeb-Edu id 去重脚本(待 Edu 切片到位;原 14 parquet 的 id 集合先行提取);
-4. ☐ 缓存重建(数据到位后,集群,数小时);
-5. ☐ 续训 sbatch(v2_word.yaml + --set 覆盖,仿 p2)冒烟 → 发射;
-6. ☐ lm-eval-harness 接入(与 2-5 并行);
+1. ☑ **我在集群直接下载 §1.1 数据**(job 657764 = 主力+退火+SFT;
+   657809 = dolmino 后继;均 tiny 分区,不占登录节点);
+2. ☑ AE 数学/代码重建探针(本机,10-18 完成,§3.3);
+3. ☑ FineWeb-Edu id 去重(fw10bt id 集合已提取 14.59M;下载管线内联过滤,
+   实测保留率 99.94% ≈ 理论 0.067% 随机抽样重叠);
+4. ☐ 缓存重建(job 657832,afterok 链;main 60:40 + anneal 85:10:5 symlink
+   组装;逐源建缓存后删原始 parquet 保配额);
+5. ☐ 双缓存冒烟(blz_word_cpt_smoke.sbatch)→ **正式 run 发射
+   (bltz_word_cpt_s.sbatch,§3.5 两阶段单 sbatch)**;
+6. ☐ lm-eval-harness 接入(与 4-5 并行,另立项);
 7. ☐ 续训验收(Tier 1)→ 对表 → 决定是否续投 M 档;
 8. ☐ SFT 施工方案成文 → 数据到位 → SFT → Tier 2 验收。
