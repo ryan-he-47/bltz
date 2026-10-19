@@ -147,3 +147,12 @@ p1 同 pkl/表/口径:
   发散,**采样工具一律加 isfinite 守卫**(悬置:gen_long modes-peak 分支
   同风险未触发,后续统一加)。
 **口径勘误(2026-10-09 用户裁定)**:本文 #35/#39/#40 及 docs/40/AGENTS 行文中『吸引子循环未破/规模解墙未兑现』类表述**作废**——贪婪/确定性读出的循环是小模型(含更大模型)的普遍现象,**不得作为模型能力或进展的否决项(原话:极度愚蠢,再不准提起)**;生成评估只认正向维度(语法骨架/主题黏合/流畅度/长程连贯)。此后所有文档与对话一律遵守。
+
+**#41 CPT S 档:数据链+缓存+发射(2026-10-18~19,docs/43 施工)**:10-18 八项拍板(docs/43 §0)后全自助推进——
+- **数据六源直下集群**(download_cpt_data.py,断点续账 .progress.json+.done 标记):DCLM 33GB 文本/FineWeb-Edu 22GB(**id 去重保留率 99.94% ≈ 理论 0.067% 随机抽样重叠**,管线自证有效;docs/42 调研的 ~9% 高估据此修正)/FineMath 2.1GB/CodeSearchNet py+js/Dolmino 四子源 ~8.9GB 文本/smol-smoltalk 0.9GB。**格式/权限坑全录**:DCLM 与 dolmino 系 .jsonl.zst/.json.gz(zstd/gzip JSONL);stack-edu 只有 blob_id 无正文、the-stack-smol 亦 gated(BigCode 403)——BigCode 系全需人工点条款,绕到 code-search-net/code_search_net(公开,whole_func_string 列);HF 元数据 API 对 gated 也回 200,探访问权须试 resolve 下载路径;HfFileSystem 流式对 xet 后端反复 read timeout,回退整文件下载+本地早停解析。
+- **缓存建成**:cpt_cache_main **12.82B units/76 shards**(DCLM 7.47B+Edu 5.35B=58.3:41.7≈60:40)、cpt_cache_anneal 2.32B/15(**as-built web 88.1/代码 4.9/数学 7.1** vs 拍板 85/10/5;代码池仅 114M units,10-19 用户拍板接受,M 档再补代码源)。build_cache_v2 泛化 build.src_dir+shard_offset 且幂等(原始 parquet 删后重跑不崩);组装 assemble_cpt_caches.py 按 meta n_units 凑比例+symlink,**安全闸:main<9.5B units 自动失败**(不轮询监控:失败即告警)。
+- **AE OOD 硬门**(probe_ae_ood.py,10-18):code EM 96.3%/math EM 86.0%(损坏集中 LaTeX 括号/反斜杠)→ 拍板代码 10%+数学 5%+Dolmino web 85%。
+- **冒烟 661331 双缓存 3 步全过**(A=weight-only 分支加载,B=全态接续+anneal 缓存)。
+- **步数口径事故(10-19)**:初版 phase A steps=45776 误当新增量——trainer **weight-only 也恢复 step 计数器**(45429),train.log 起步 step=45450 当场抓住;scancel 借 ckpt_every=250 周期存档点无损止损(saved 45530,仅丢几十步)。修为绝对终点:**A 45429→91205(+45776 步纯平台 LR 2e-4 @ cpt_cache_main),B 91205→96292(+5087 步退火到 0 @ cpt_cache_anneal)**。**家规新增:续训新段 steps=resume_step+新增步数。**
+- **正式 run 661426 在跑**(10-19 晚发射;661332 系步数修复前初版,已止损);wall-out 自续投,预计 ~100h。起跑读数:45550 步 loss -33.99/gn 4.0/0 skips(对照 p2 旧数据终点 -41.2,换分布抬 loss 属预期)。
+- **lm-eval-harness 接入完成**(scripts/lmeval_bltz.py;register_model bltz,三 score_mode;hellaswag limit32 出数+distilgpt2 对拍归一化契约;**口径发现:unit_nll 下 acc_norm 系统性偏长候选,多选主口径=pushforward_joint+acc**,docs/43 §4 注记)。

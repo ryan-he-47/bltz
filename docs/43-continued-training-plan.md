@@ -203,10 +203,10 @@ py+js 池全量仅 114M units(代码不足 10%);finemath 小 shard 化后 2 片
 2. ☑ AE 数学/代码重建探针(本机,10-18 完成,§3.3);
 3. ☑ FineWeb-Edu id 去重(fw10bt id 集合已提取 14.59M;下载管线内联过滤,
    实测保留率 99.94% ≈ 理论 0.067% 随机抽样重叠);
-4. ☐ 缓存重建(job 657832,afterok 链;main 60:40 + anneal 85:10:5 symlink
-   组装;逐源建缓存后删原始 parquet 保配额);
-5. ☐ 双缓存冒烟(blz_word_cpt_smoke.sbatch)→ **正式 run 发射
-   (bltz_word_cpt_s.sbatch,§3.5 两阶段单 sbatch)**;
+4. ☑ 缓存重建(job 661330 完成;main 12.82B/76 shards 60:40、anneal
+   2.32B/15 as-built 88.1:4.9:7.1;逐源建缓存后删原始 parquet 保配额);
+5. ☑ 双缓存冒烟(661331 全过)→ **正式 run 661426 在跑**(10-19 晚发射;
+   步数口径事故已修复,见 §3.5);
 6. ☐ lm-eval-harness 接入(与 4-5 并行,另立项);
 7. ☐ 续训验收(Tier 1)→ 对表 → 决定是否续投 M 档;
 8. ☐ SFT 施工方案成文 → 数据到位 → SFT → Tier 2 验收。
