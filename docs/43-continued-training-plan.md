@@ -138,7 +138,9 @@ py+js 池全量仅 114M units(代码不足 10%);finemath 小 shard 化后 2 片
   91205 接续→96292,decay_frac=0.0528 退到 0,cache=cpt_cache_anneal)。
   新增训练 50863 步×196.6k units=10.0B units,退火尾=5087 步=10.0%。
   wall-out 自动续投沿用 p2 配方(墙前 300s STOP→近墙自投本文件;
-  phase 完成判定=各自 ckpt_dir 的 last.pt)。预计 ~100h(2 段 72h 墙内)。
+  phase 完成判定=各自 ckpt_dir 的 last.pt)。**预计 ~155h ≈ 6.5 天(3 段
+  72h 墙)**——10-19 实测 11.3 s/步 × 50863 步;(初版写的 ~100h 系误把
+  p2「累计 10B」当「新增 10B」,勘误)。
 - **⚠️ 步数口径教训(10-19 事故)**:trainer 即使 weight-only 加载也从
   resume ckpt **恢复 step 计数器**(p2 同款:20004→50863)——`train.steps`
   是**绝对终点**不是新增量。初版误把 phase A 终点写成 45776(实际只够
