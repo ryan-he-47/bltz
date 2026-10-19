@@ -35,11 +35,10 @@ ANNEAL_POOL_MAP = [
     ("dolmino_stackexchange", 150, 200),
     ("stack_edu_python", 200, 210),
     ("stack_edu_javascript", 210, 220),
-    ("stack_edu_markdown", 220, 230),
     ("finemath", 230, 400),
 ]
 ANNEAL_WEB = ("dolmino_dclm", "dolmino_pes2o", "dolmino_wiki", "dolmino_stackexchange")
-ANNEAL_CODE = ("stack_edu_python", "stack_edu_javascript", "stack_edu_markdown")
+ANNEAL_CODE = ("stack_edu_python", "stack_edu_javascript")  # markdown 已去掉(10-18 二轮换源)
 ANNEAL_MATH = ("finemath",)
 TARGET_WEB, TARGET_CODE, TARGET_MATH = 0.85, 0.10, 0.05
 

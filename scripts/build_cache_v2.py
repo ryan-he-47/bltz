@@ -99,6 +99,14 @@ def main() -> None:
     if src_dir:
         files = sorted(str(p) for p in Path(src_dir).rglob("*.parquet"))
         if not files:
+            # 幂等重跑(2026-10-19 事故教训): 原始 parquet 可能在建完后被
+            # 配额清理删掉 — 若目标缓存已有完整 shard, 干净跳过而不是崩。
+            done_shards = [d for d in Path(cache_dir).glob("shard-*")
+                           if (d / "meta.json").exists()]
+            if done_shards:
+                print(f"phase 1: {src_dir} gone/empty, but {cache_dir} already "
+                      f"has {len(done_shards)} complete shards; skip", flush=True)
+                return
             raise FileNotFoundError(f"no parquet under {src_dir}")
         for i, p in enumerate(files):
             jobs.append((shard_offset + i, p))
