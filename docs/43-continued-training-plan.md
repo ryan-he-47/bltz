@@ -111,12 +111,18 @@ segment_word 重切后逐 unit 评测:teacher-forced CE/bacc + 贪婪解码 EM):
 显著 OOD 但非塌方——失败高度集中于 LaTeX 承重字符(`{`、`}`、`\command`、
 `_{`),14% unit latent 损坏且恰为数学骨架字符。
 
-### 3.4 退火段配比定稿(2026-10-18,用户拍板)
+### 3.4 退火段配比定稿(2026-10-18 用户拍板;as-built 修订 10-19)
 
 - **代码 10%**(CodeSearchNet:python+javascript 切片;10-18 二轮换源,
   见 §1.1 注记);
 - **数学 5%**(FineMath-4plus 切片)——按探针结果压比例:全退火段损坏
   unit ≈0.7%,可接受;
+
+**实际组装(cpt_cache_anneal,15 shards/2.32B units)**:web **88.1%** /
+代码 **4.9%** / 数学 **7.1%**(目标 85/10/5)。偏差来源:CodeSearchNet
+py+js 池全量仅 114M units(代码不足 10%);finemath 小 shard 化后 2 片
+164M(数学略超)。**10-19 用户拍板:接受现状直接跑**(退火尾代码曝光
+≈50M units 占总量 0.5%,影响很小;M 档再补足代码源)。
 - **其余 ~85% 给 Dolmino 高质量 web**:dclm/pes2o/wiki/stackexchange 切片
   (跳过 dolmino-math——FineMath 已覆盖;跳过 flan——指令格式留给 SFT);
 - 退火段总长 = 末 ~10% 步数 ≈ 5100 步 ≈ 1B units;各源独立 shard 组,
