@@ -3,12 +3,18 @@
 # +10B units on NEW data (60% DCLM + 40% FineWeb-Edu-dedup, zero replay).
 # Branch point: word_05b_p2/ckpt_pre_decay.pt (step 45429, weight-only).
 # Two phases in ONE sbatch (mid-run data switch = two trainer invocations):
-#   A word_cpt_s_stable : step 0 -> 45776, plateau LR 2e-4 (decay_frac=0),
-#                         cache = cpt_cache_main; weight-only + rewarmup 500.
-#   B word_cpt_s_anneal : resume A ckpt_full (45776) -> 50863, decay tail
-#                         decay_frac=0.1 -> 0, cache = cpt_cache_anneal
-#                         (code 10% + math 5% + Dolmino web 85%, docs/43 §3.4).
-# Total 50863 steps x 196.6k units = 10.0B units; decay tail = 10.0% steps.
+#   A word_cpt_s_stable : step 45429 -> 91205 (= +45776 步新数据), plateau LR
+#                         2e-4 (decay_frac=0), cache = cpt_cache_main;
+#                         weight-only + rewarmup 500.
+#   B word_cpt_s_anneal : resume A ckpt_full (91205) -> 96292, decay tail
+#                         decay_frac=0.0528 -> 0, cache = cpt_cache_anneal
+#                         (as-built web/code/math = 88/5/7, docs/43 §3.4).
+# Total NEW-data steps = 91205+96292-45429-91205... = 50863 steps x 196.6k
+# units = 10.0B units; decay tail = 5087 步 = 10.0% of the new-data run.
+# ⚠️ 步数全局口径(2026-10-19 事故修复): 即使 weight-only 加载, trainer 也
+# 从 resume ckpt 恢复 step 计数器(p2 同款: 20004->50863)——train.steps 是
+# 绝对终点不是新增量。初版误把 phase A 写成 0->45776, 被 train.log 起步
+# step=45450 当场抓住, STOP 优雅停后修正为上述绝对步数。
 # wall-out auto-resubmit (p2-proven recipe): watchdog touches STOP at
 # wall-300s; after wait, "clean exit + no last.pt + near wall" -> resubmit
 # THIS file; manual STOP does not trigger resubmit (not near wall); crash
@@ -88,15 +94,15 @@ run_phase() {
 }
 
 if [ ! -f "$CKPT_A/last.pt" ]; then
-  echo "===== phase A: stable on cpt_cache_main ====="
-  run_phase "$CKPT_A" "$DATA/cpt_cache_main" 45776 0.0 0.1 500 \
+  echo "===== phase A: stable on cpt_cache_main (45429 -> 91205) ====="
+  run_phase "$CKPT_A" "$DATA/cpt_cache_main" 91205 0.0 0.1 500 \
     "$SCRATCH/ckpts/word_05b_p2/ckpt_pre_decay.pt"
 fi
 
 if [ ! -f "$CKPT_B/last.pt" ]; then
-  echo "===== phase B: anneal tail on cpt_cache_anneal ====="
-  run_phase "$CKPT_B" "$DATA/cpt_cache_anneal" 50863 0.1 0.0 0 \
+  echo "===== phase B: anneal tail on cpt_cache_anneal (91205 -> 96292) ====="
+  run_phase "$CKPT_B" "$DATA/cpt_cache_anneal" 96292 0.0528 0.0 0 \
     "$CKPT_A/ckpt_full.pt"
 fi
 
-echo "[done] CPT S-tier complete (A 45776 + B to 50863 = 10.0B units)"
+echo "[done] CPT S-tier complete (A +45776 + B +5087 = +50863 steps = 10.0B units)"

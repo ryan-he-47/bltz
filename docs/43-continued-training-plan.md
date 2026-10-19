@@ -129,19 +129,25 @@ py+js 池全量仅 114M units(代码不足 10%);finemath 小 shard 化后 2 片
   ShardRotator 按比例驻留;
 - 若日后做 M/L 档或重训 AE,再议提高数学占比。
 
-### 3.5 训练实施:两阶段单 sbatch(2026-10-18 定稿)
+### 3.5 训练实施:两阶段单 sbatch(2026-10-18 定稿;10-19 步数口径修复)
 
 - **`slurm/bltz_word_cpt_s.sbatch`**:一份 sbatch 内两次 trainer 调用实现
-  中途换数据——**phase A**(`word_cpt_s_stable`,0→45776 步,decay_frac=0
+  中途换数据——**phase A**(`word_cpt_s_stable`,45429→91205 步,decay_frac=0
   纯平台,LR 2e-4,cache=cpt_cache_main,weight-only 自 ckpt_pre_decay 加载
   +rewarmup 500);**phase B**(`word_cpt_s_anneal`,全态自 A 的 ckpt_full
-  45776 接续→50863,decay_frac=0.1 退到 0,cache=cpt_cache_anneal)。
-  总计 50863 步×196.6k units=10.0B units,退火尾=10.0% 步数。
+  91205 接续→96292,decay_frac=0.0528 退到 0,cache=cpt_cache_anneal)。
+  新增训练 50863 步×196.6k units=10.0B units,退火尾=5087 步=10.0%。
   wall-out 自动续投沿用 p2 配方(墙前 300s STOP→近墙自投本文件;
   phase 完成判定=各自 ckpt_dir 的 last.pt)。预计 ~100h(2 段 72h 墙内)。
+- **⚠️ 步数口径教训(10-19 事故)**:trainer 即使 weight-only 加载也从
+  resume ckpt **恢复 step 计数器**(p2 同款:20004→50863)——`train.steps`
+  是**绝对终点**不是新增量。初版误把 phase A 终点写成 45776(实际只够
+  347 步),被 train.log 起步 step=45450 当场抓住;scancel 借 250 步周期
+  存档点止损(仅损失几十步),已修为 91205/96292。**凡续训新段:
+  steps = resume_step + 新增步数。**
 - **冒烟**:`slurm/bltz_word_cpt_smoke.sbatch`(stingy 分区,双缓存各 3 步
   production 形状:A=weight-only 分支加载,B=全态接续+anneal 缓存),
-  通过后才允许发射正式 run。
+  **已通过(661331,10-19)**。
 - 退火段数据通过缓存组装即完成配比(docs/43 §2 symlink 组装),训练侧
   零改动。
 
