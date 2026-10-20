@@ -46,7 +46,8 @@ def sample_units(cache_dir: Path, n: int, seed: int = 20261020) -> list[bytes]:
         if len(sel):
             raw = np.load(d / "bytes.npy", mmap_mode="r")
             offs = np.concatenate([[0], np.cumsum(lens[:])])
-            units.extend(bytes(raw[offs[i]:offs[i + 1]]) for i in sel)
+            units.extend(bytes(raw[int(offs[i]):int(offs[i + 1])])
+                         for i in (int(j) for j in sel))
         base += len(lens)
     return units
 
