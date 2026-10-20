@@ -111,6 +111,12 @@ segment_word 重切后逐 unit 评测:teacher-forced CE/bacc + 贪婪解码 EM):
 显著 OOD 但非塌方——失败高度集中于 LaTeX 承重字符(`{`、`}`、`\command`、
 `_{`),14% unit latent 损坏且恰为数学骨架字符。
 
+**补测(2026-10-20,用户问 DCLM 编码质量;scripts/probe_ae_shards.py,
+job 666531)**:DCLM 缓存抽样 3000 units——**greedyEM 0.9977 / bacc 0.9981 /
+CE 0.0087**,与 FineWeb 基线(0.9988/0.9994/0.0016)同级;**生产侧佐证:
+CPT run 的 verify 重切 flag 率 0.044% ≈ 旧数据 0.041%**。**结论:AE 在
+DCLM/Edu 上编码质量无虞,不是续训 loss 差距的原因。**
+
 ### 3.4 退火段配比定稿(2026-10-18 用户拍板;as-built 修订 10-19)
 
 - **代码 10%**(CodeSearchNet:python+javascript 切片;10-18 二轮换源,
