@@ -47,15 +47,27 @@ export OMP_NUM_THREADS=4
 cd "$REPO"
 git pull --ff-only || echo "[train] git pull failed, using existing checkout"
 
+# 2026-10-26 事故修复: 撞墙 SIGTERM 会杀 batch 脚本(SIGTERM@60 默认 disposition),
+# wait 返回前脚本就死了 -> 近墙自投逻辑从未执行(674254 案例: seg2 末 A 完成、
+# B 起跑 76min 被墙杀, 无 resubmit)。捕获 TERM 让脚本继续走到检查点。
+trap 'echo "[sig] SIGTERM at elapsed ${SECONDS}s (wall)"; :' TERM
+
 run_phase() {
   local CKPT=$1 CACHE=$2 STEPS=$3 DFRAC=$4 FFRAC=$5 REWARMUP=$6 RESUME0=$7
   mkdir -p "$CKPT"
+  rm -f "$CKPT/STOP"  # 清 STALE STOP(跨段残留会一启即停)
   local RESUME=(--set "train.resume=$RESUME0")
   if [ -f "$CKPT/ckpt_full.pt" ]; then
     RESUME=(--set "train.resume=$CKPT/ckpt_full.pt")
     echo "[train] resuming own state from $CKPT/ckpt_full.pt"
   fi
-  local REM=$((WALL_S - 300 - SECONDS)); [ $REM -lt 60 ] && REM=60
+  local REM=$((WALL_S - 300 - SECONDS))
+  if [ $REM -lt 7200 ]; then
+    # 剩余墙时不足 2h: 不启动新阶段(否则跑几百步又被杀, 白烧一段)
+    echo "[wall] only ${REM}s wall left; NOT starting $CKPT phase -> resubmit"
+    sbatch "$REPO/slurm/bltz_word_cpt_s.sbatch" || echo "[wall] resubmit FAILED - manual resubmit needed"
+    exit 0
+  fi
   ( sleep $REM; touch "$CKPT/STOP" ) &
   local WD=$!
 
@@ -82,8 +94,10 @@ run_phase() {
   wait $MAIN || EXIT_CODE=$?
   kill $WD 2>/dev/null || true
 
-  if [ "$EXIT_CODE" -eq 0 ] && [ ! -f "$CKPT/last.pt" ] && [ "$SECONDS" -ge $((WALL_S - 900)) ]; then
-    echo "[wall] near-wall graceful stop (elapsed ${SECONDS}s) -> resubmit"
+  if [ ! -f "$CKPT/last.pt" ] && [ "$SECONDS" -ge $((WALL_S - 1800)) ]; then
+    # graceful STOP(code 0) 或撞墙 SIGTERM(code 143/137) 且近墙 -> 自投下一段。
+    # 远离墙的非零退出仍是 crash, 不重投(防死循环)。
+    echo "[wall] near-wall exit (code $EXIT_CODE, elapsed ${SECONDS}s) -> resubmit"
     sbatch "$REPO/slurm/bltz_word_cpt_s.sbatch" || echo "[wall] resubmit FAILED - manual resubmit needed"
     exit 0
   fi
