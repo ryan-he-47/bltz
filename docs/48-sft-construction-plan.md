@@ -28,13 +28,14 @@
 | 轮数分布(抽样) | 2 轮 25%、3 轮 16%、6 轮 58%、长轮(≥7)极小 |
 | 渲染后字符数(5000 抽样) | mean 3912 / p50 3654 / p90 6637 / p99 13941 / max 62708 |
 | **word-unit 数**(segment_word) | **mean 817** / p50 826 / p90 1261 / p99 2867 / max 19242 |
-| **assistant 目标占比** | **73.1%**(mean 598 target units/对话) |
+| **assistant 目标占比** | **73.1%**(5000 行抽样)/ 81.2%(前 100 行,长回答源偏置)——源异质,构建期报告全量实测值;只影响 loss 权重尺度不影响口径 |
 | 截断率(>4096 units) | **0.88%**(44/5000) |
 | **全量估算** | **≈396M units / epoch** → **2015 步/epoch**(196,608 units/步,与 CPT 同 batch 口径) |
 | **每 epoch 墙钟** | **≈6.3h**(11.3 s/step 实测) |
 
 标记切词实测(segment_word):`<|user|>`→`[<|, user, |>]`(3 units),
-`<|assistant|>`/`<|end|>` 同;符号 run 会与相邻符号(如换行)合并(见 §2.3)。
+`<|assistant|>`/`<|end|>` 同;符号 run 会与相邻符号合并——**已用真实数据
+实测并定模板**:轮间不加分隔符(见 §2.1/§2.3,probe 692652)。
 
 ## 2. 模板与切词
 
@@ -49,7 +50,12 @@
 ...
 ```
 - 无 system 时直接从 `<|user|>` 开始(smol-smoltalk 96% 无 system)。
-- 每轮之间以 `\n` 分隔(纯排版,不参与 loss)。
+- **轮间分隔:实测选「无分隔符」**(2026-10-26 实测,`scripts/probe_sft_template.py`,
+  tiny job 692652,100 条真实对话/79,732 units):`\n` 或空格分隔会让跨轮符号
+  合并成 `|>\n<|` / `|> <|`(130 例,0.16%),**这类 unit 的 AE 重建 flag 率
+  7.87%**;无分隔符时合并形为 `|><|`,AE 可稳定重建 → **marker flag 率降到
+  1.43%**(剩余失败来自代码围栏等正文符号融合)。三种变体的文本/切词总量/
+  cross-turn 合并数完全相同,唯一差别就是合并 unit 形态 → **采用无分隔符**。
 - **target 判定按字节区间**:assistant 内容 + 紧随的 `<|end|>`=1(计 loss);
   system/user 内容与所有 marker=0(prompt mask)。单位归属按「unit 首字节
   落在哪个区间」判定(与 `scripts/lmeval_bltz.py` 的 context/continuation
@@ -67,17 +73,21 @@
   0.2 / floor_bytes 3)在 cache 构建期做一次核验重切(确定性,与训练侧在线核验
   等价)→ 训练 `train.verify.enabled=false`,免去 loss-mask 在线传播的代码改动,
   训练路径与 pre-training 完全一致。构建期报告每个 parquet 的 flag 率。
-- **marker OOD 探针(构建期必报)**:`<|`/`|>`/`user`/`assistant`/`end`/`system`
-  /合并形如 `|>\n<|` 的单元在 AE 上的重建 EM/flag 率。若 marker 单元 flag 率
-  显著高于正文(>0.5%),改备选 marker(如 `[[user]]`)或对 marker 单元强制保留
-  原文(acceptable,需在 cache 构建里加白名单)。
+- **marker OOD 探针(2026-10-26 已实测,`scripts/probe_sft_template.py`)**:
+  100 条真实对话(79,732 units)上,正文单元 AE flag 率 **0.59%**(高于预训练
+  0.044%——SFT 内容含指令/代码/数学,属预期,在线 verify 会 BPE 重切);
+  marker 相关单元 flag 率(无分隔符模板)**1.43%**,主要剩余形态是
+  `\n```<|`/`|>``` ` 这类"正文符号+marker"融合;纯 marker 单元
+  (`<|`/`user`/`|>`/`|><|`)均可稳定重建。**结论:无需改 marker 方案,
+  不需要白名单**;构建期继续报告全量 flag 率。
 
-### 2.3 已知边界效应(记录,不阻塞)
+### 2.3 已知边界效应(2026-10-26 已实测,记录,不阻塞)
 
-- `<|end|>` 后接 `\n<|user|>`:符号 run 会合并为 `|>\n<|` 这类 unit —— 文本
-  不变、stop 仍可命中,只是 unit 粒度粗;会在 cache 构建报告里给出此类 unit
-  的占比。若占比高(>5%),备选:轮间加一个词级分隔(如 `\nAssistant:`)或
-  将 marker 改成字母开头形式。
+- 跨轮符号合并:无分隔符模板下为 `|><|`(130/79,732 units = **0.16%**),
+  AE 可稳定重建(EM/entropy 通过)→ verify 不改动,unit 粒度粗但文本不变、
+  stop 仍可命中;占比低,不再需要备选分隔词。
+- 正文与 marker 融合的形态(如 `.\n```<|`、`|>``` `)占比 <0.1%,由 verify
+  按常规 BPE 重切处理。
 
 ## 3. 代码施工清单
 
@@ -90,7 +100,8 @@
    预计输出 ≈4GB(unit bytes≈1.9GB + len/flag/loss 各≈396MB)。
    落盘 `$SCRATCH/data/sft_cache`。
 2. 单测 `tests/test_sft_cache.py`:模板 span→mask 正确性(构造小样本逐 unit 核对)、
-   mask 总量≈73%、切词守恒(拼接=原文)、marker 单元快照。
+   mask 总量(全量构建期实测报告;抽样 see §1)、切词守恒(拼接=原文)、
+   marker 单元快照。
 
 ### 3.2 训练侧(最小改动,向后兼容)
 
@@ -154,6 +165,23 @@
 | 冒烟 | 3 步 | ~15 min |
 | SFT 训练 | 1 epoch(2015 步) | **≈6.5-7h**;2 epochs ≈13h(单段 3 天墙内,无需跨墙) |
 | Tier 2 验收 | IFEval+MMLU(limit/全量)+GSM8K+旧分布回归 | 半天~1 天(含开发) |
+| **磁盘** | SFT cache ≈4GB + 滚动 ckpt ≈20-25GB | **需先释放 ≥85GB(见 §4.4)** |
+
+### 4.4 磁盘/配额(2026-10-26 实测,**SFT 前置阻塞项**)
+
+- 集群个人 scratch **软配额 300GiB**;实测用量 **355.8GiB(已超 55.8GiB)**:
+  `bltz` 276GB(ckpts 114G + data 162G)+ `cose` 54G(其它项目,勿动)+
+  `qwen35` 27G(训练必需 tokenizer)+ 杂项。
+- SFT 需额外 ~30GB(cache≈4GB + 滚动 ckpt≈20-25GB)→ 必须先释放 ≥85GB。
+- **已备好裁剪清单**(2026-10-26 dry-run job 692688 验证):`scripts/prune_ckpts.py`
+  + `slurm/bltz_prune_ckpts.sbatch`(默认 dry-run,`--apply` 才删;只按显式清单
+  删,不 glob)。**可释放 ≈103GB**:已完成 run 的滚动全状态 ckpt(`ckpt_full*`)
+  + 已完成 run 的里程碑 + 2026-09 已关闭消融臂目录(p1/p2 的 pre_decay 中 p1 的
+  分支点也被 p2 取代,可删)。
+- **保留**:p2 `last/best/pre_decay`(旧分布基线+S 档分支点)、CPT stable
+  `last/best`、anneal `last/best/pre_decay/s0095000`、AE best、**全部 data
+  缓存(活资产)**、SFT 数据。裁剪后 `bltz` ≈173GB,总 scratch ≈254GiB < 300。
+- **执行需用户批准**:`sbatch slurm/bltz_prune_ckpts.sbatch --apply`(当前未执行)。
 
 ## 5. 风险与对策
 
@@ -175,7 +203,10 @@
    则等于几乎不训练,不建议;
 4. **system 角色**:保留 `<|system|>` marker(推荐)或并入首条 user;
 5. **MMLU 5-shot 范围**:全量(~4h)或 limit 2000 趋势版(~0.5h,推荐先跑);
-6. 是否允许在 SFT 数据中混 5-10% CPT 数据防遗忘(**默认零 replay,不混**)。
+6. 是否允许在 SFT 数据中混 5-10% CPT 数据防遗忘(**默认零 replay,不混**);
+7. **是否批准 scratch ckpt 裁剪**(§4.4,释放 ≈103GB,**SFT 的硬前置**;
+   只删已完成 run 的滚动/里程碑 ckpt 与 2026-09 已关闭消融臂,保留
+   p2/CPT 关键 ckpt 与全部缓存;`--apply` 未执行)。
 
 ## 7. 执行序(拍板后)
 
@@ -193,4 +224,9 @@
 # 数据测量(已完成,job 692634)
 sbatch slurm/bltz_sft_probe.sbatch
 # 结果:$SCRATCH/data/sft_probe.json + logs/sft_probe_692634.out
+
+# 模板/marker 验证(已完成,job 692652;三变体 × AE verify)
+sbatch slurm/bltz_sft_template.sbatch
+# 结果:$SCRATCH/data/sft_template_probe.json + logs/sft_template_692652.out
 ```
+

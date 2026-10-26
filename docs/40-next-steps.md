@@ -85,6 +85,11 @@
 
 ## 悬置运维项
 
+- **scratch 配额超限(2026-10-26 实测,阻塞 SFT)**:个人 scratch 软配额
+  300GiB,实测 355.8GiB(bltz 276G + cose 54G + qwen35 27G);SFT 需再 ~30GB。
+  裁剪清单已备(`scripts/prune_ckpts.py`,dry-run 可释放 ≈103GB,**待用户批准**
+  `sbatch slurm/bltz_prune_ckpts.sbatch --apply`);详见 docs/48 §4.4。
+
 - **rewarmup 日志瑕疵**:trainer 的 lr 字段在 rewarmup 段记的是调度值
   非实际施加值(实际 ramp 正常);下次 trainer 小修顺手补。
 - **stingy 分区**:gpu-v100s-01 常空闲,5h 时限,冒烟专用;正式 run
