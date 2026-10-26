@@ -20,8 +20,17 @@
 - generate_until: modes-peak 采样(modes() 枚举局部众数 + 峰顶海拔
   log_dens 加权 + 核采样 0.95,docs/39 #36 翻案)+ isfinite 守卫(发散即停
   该请求并记录,不伪造样本)+ stop 序列 + max_gen_toks 粗换算
-  (1 unit ≈ 5 字节 ≈ 1 常规 token,max_units = max_gen_toks)。unit 解码为
-  空串视作 EOS 停止(word 流无 stream 级 EOS 单元)。
+  (1 unit ≈ 5 字节 ≈ 1 常规 token,max_units = max_gen_toks,并上限
+  `--max-gen-units`,默认 256——适配器逐 unit 重算 context,长生成是 O(n²),
+  IFEval 类任务必须截断预算)。unit 解码为空串视作 EOS 停止(word 流无
+  stream 级 EOS 单元)。
+
+- **chat 模板(2026-10-26 新增,--chat-template;为 SFT 后 Tier 2 备)**:
+  生成侧把 harness context 包成 `<|user|>{context}<|assistant|>`,并自动追加
+  stop 序列 `<|end|>`;loglikelihood(MMLU 等)只包 context、continuation 照旧
+  计分(接缝不跨 unit 的约定不变)。**默认关闭** → 与 2026-10-18 行为逐位
+  一致(pre-training 口径基准数字可直接复用)。模板与 SFT 训练一致
+  (docs/48 §2.1:轮间无分隔符,target=assistant 内容+`<|end|>`)。
 
 口径发现(2026-10-18 本机验证,重要): unit 级 GMM 密度 NLL 的绝对值随
 unit 字节长度变化极弱(NLL 约与 unit 数成正比),而 harness acc_norm 按
@@ -79,6 +88,10 @@ from train_ae import tensorize
 from lm_eval.api.model import LM
 from lm_eval.api.registry import register_model
 
+DEV = "cuda"
+CHAT_USER = "<|user|>"
+CHAT_ASSISTANT = "<|assistant|>"
+CHAT_END = "<|end|>"
 LOG2E = 1.4426950408889634
 
 
@@ -94,6 +107,8 @@ class BltzEvalLM(LM):
         device: str = "cuda",
         verify: bool = True,
         temperature: float = 1.0,
+        chat_template: bool = False,
+        max_gen_units: int = 256,
         max_length: int = 0,          # 0 -> 取 ckpt 的 data.n_patches
         score_mode: str = "unit_nll",  # "unit_nll" | "byte_marginal" | "pushforward_joint"
         heartbeat: int = 10,
@@ -102,6 +117,8 @@ class BltzEvalLM(LM):
         super().__init__()
         self.dev = device
         self.temperature = float(temperature)
+        self.chat_template = bool(chat_template)
+        self.max_gen_units = max(1, int(max_gen_units))
         self.heartbeat = max(1, int(heartbeat))
 
         ae_state = torch.load(ae, map_location="cpu", weights_only=False)
@@ -124,7 +141,14 @@ class BltzEvalLM(LM):
         )
         print(f"[bltz-eval] ckpt={pretrained} step={st.get('step')} "
               f"d_model={Cfg(st['cfg']).model.d_model} S={self.max_len} "
-              f"verify={verify is not None} dev={device}", flush=True)
+              f"verify={verify is not None} dev={device} "
+              f"chat_template={self.chat_template} "
+              f"max_gen_units={self.max_gen_units}", flush=True)
+
+    # ---- chat 模板(SFT 口径;docs/48 §2.1) --------------------------------
+    def _chat_prompt(self, context: str) -> str:
+        """`<|user|>{context}<|assistant|>`(轮间无分隔符;默认关闭时不动)。"""
+        return f"{CHAT_USER}{context}{CHAT_ASSISTANT}"
 
     # ---- 切词(训练同管线: segment_word + 在线核验重切) -------------------
     def _segment(self, text: str) -> list[bytes]:
@@ -231,6 +255,8 @@ class BltzEvalLM(LM):
         t0 = time.time()
         for i, req in enumerate(requests):
             context, continuation = req.args
+            if self.chat_template:  # SFT 口径:只包 context,continuation 照旧
+                context = self._chat_prompt(context)
             # 联合切词(与训练流同分布): context+continuation 拼成整段再
             # segment_word,避免分别切词在接缝处造出 lone-space 等分布外 unit
             # (实测: " Paris" 单切出 [' ','Paris'], 孤空格 unit NLL +64.8,
@@ -324,7 +350,13 @@ class BltzEvalLM(LM):
         for i, req in enumerate(requests):
             context, gen_kwargs = req.args
             until = list(gen_kwargs.get("until", []) or [])
-            max_units = int(gen_kwargs.get("max_gen_toks", 256))  # 粗换算见头注
+            if self.chat_template:  # SFT 口径:包 prompt + 停止标记
+                context = self._chat_prompt(context)
+                if CHAT_END not in until:
+                    until.append(CHAT_END)
+            # 粗换算见头注;上限 --max-gen-units(适配器逐 unit 重算 context,O(n^2))
+            max_units = min(int(gen_kwargs.get("max_gen_toks", 256)),
+                            self.max_gen_units)
             tau = float(gen_kwargs.get("temperature", self.temperature))
             do_sample = bool(gen_kwargs.get("do_sample", True))
             units = self._segment(context)[-self.max_len :]
@@ -408,7 +440,9 @@ class BltzEvalLM(LM):
 def _selftest(args) -> None:
     lm = BltzEvalLM(pretrained=args.ckpt, ae=args.ae, tok_dir=args.tok,
                     device=args.device, verify=not args.noverify,
-                    score_mode=args.score_mode)
+                    score_mode=args.score_mode,
+                    chat_template=args.chat_template,
+                    max_gen_units=args.max_gen_units)
 
     class _Req:
         def __init__(self, *a):
@@ -441,6 +475,22 @@ def _selftest(args) -> None:
                                 {"until": ["\n", "."], "max_gen_toks": 24,
                                  "temperature": 0.8})])[0]
     print(f"  generated: {g!r}", flush=True)
+
+    # ---- chat 模板机制(2026-10-26;SFT Tier 2 口径)-----------------------
+    print("\n== selftest: chat template ==", flush=True)
+    lm_chat = BltzEvalLM(pretrained=args.ckpt, ae=args.ae, tok_dir=args.tok,
+                         device=args.device, verify=not args.noverify,
+                         score_mode=args.score_mode,
+                         chat_template=True, max_gen_units=24)
+    prompt = "Give one short sentence about Paris."
+    print(f"  wrapped prompt: {lm_chat._chat_prompt(prompt)!r}", flush=True)
+    g = lm_chat.generate_until([_Req(prompt, {"until": ["\n"], "max_gen_toks": 64,
+                                              "temperature": 0.8})])[0]
+    print(f"  generated: {g!r} (chat mode appends {CHAT_END!r} to stop list)",
+          flush=True)
+    ll, greedy = lm_chat.loglikelihood([_Req("What is the capital of France?",
+                                            " Paris")])[0]
+    print(f"  chat loglikelihood: ll={ll:9.3f} nats | greedy={greedy}", flush=True)
     print("\n[selftest] DONE", flush=True)
 
 
@@ -453,6 +503,12 @@ def main() -> None:
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--noverify", action="store_true")
     ap.add_argument("--temperature", type=float, default=1.0)
+    ap.add_argument("--chat-template", action="store_true",
+                    help="SFT 口径:context 包成 <|user|>…<|assistant|>,"
+                         "生成自动加 <|end|> stop(docs/48 §2.1)")
+    ap.add_argument("--max-gen-units", type=int, default=256,
+                    help="generate_until 的 unit 数上限(默认 256;适配器逐 "
+                         "unit 重算 context,O(n^2),大 max_gen_toks 必须截断)")
     ap.add_argument("--score-mode", default="unit_nll",
                     choices=["unit_nll", "byte_marginal", "pushforward_joint"])
     ap.add_argument("--selftest", action="store_true")
@@ -469,7 +525,9 @@ def main() -> None:
     from lm_eval import simple_evaluate
     lm = BltzEvalLM(pretrained=args.ckpt, ae=args.ae, tok_dir=args.tok,
                     device=args.device, verify=not args.noverify,
-                    temperature=args.temperature, score_mode=args.score_mode)
+                    temperature=args.temperature, score_mode=args.score_mode,
+                    chat_template=args.chat_template,
+                    max_gen_units=args.max_gen_units)
     t0 = time.time()
     res = simple_evaluate(
         model=lm,

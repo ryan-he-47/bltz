@@ -150,14 +150,25 @@
 | 遗忘/回归 | 旧评估 pkl diag_v2 NLL/snap bpb + `checkpoints/word_cpt_s_accept.log` 口径 | snap bpb 退化 ≤0.02(同 docs/43 §6) |
 | 生成目检 | 8 prompt×6 读出(modes-peak 正向维度)| 格式合规、`<|end|>` 停止、无退化 |
 
-- 适配器现状:`scripts/lmeval_bltz.py` 已实现 `loglikelihood`/`generate_until`
-  (modes-peak 采样),**SFT 前需加**:`generate_until` 的 stop 序列透传
-  (`<|end|>`)与 chat 模板注入(把 harness 的 context 包成
-  `<|user|>…<|assistant|>`);~0.5 天。
+- **适配器(2026-10-26 已完工)**:`scripts/lmeval_bltz.py` 已实现
+  `loglikelihood`/`generate_until`(modes-peak 采样),本轮新增:
+  `--chat-template`(context 包成 `<|user|>…<|assistant|>`;生成自动追加
+  `<|end|>` stop;loglikelihood 只包 context、continuation 照旧)、
+  `--max-gen-units`(默认 256,防 O(n²) 生成爆时)。**默认关闭 → 与 10-18
+  验收口径逐位一致**(selftest NLL 复跑一致;arc_easy limit-8 双路径冒烟通过)。
 - **任务可用性(2026-10-26 在集群 venv 实测)**:lm-eval 0.4.13 已内置
   `ifeval`、`mmlu`、`mmlu_pro`、`gsm8k`、`gsm8k_cot`、`minerva_math`、
   `lambada_openai` 及 8 项 MC 任务(共 14,689 个具名 task handle),无需自写
   YAML(仅 CUTE/CharBench 需另接)。
+- **SFT 后 Tier 2 示例命令**:
+  ```bash
+  # IFEval(generate_until;chat 模板 + <|end|> stop;建议 limit 先跑 100)
+  $VENV/bin/python scripts/lmeval_bltz.py --ckpt <sft_last.pt> --ae <ae> --tok <tok> \
+      --chat-template --tasks ifeval --limit 100 --score-mode unit_nll --device cuda
+  # MMLU 5-shot(chat 口径;loglikelihood,成本高建议先 limit 2000)
+  $VENV/bin/python scripts/lmeval_bltz.py ... --chat-template --tasks mmlu \
+      --num-fewshot 5 --limit 2000 --score-mode unit_nll
+  ```
 - 预算:IFEval ~1-2h(541 prompts,生成式);MMLU 5-shot ~3-4h(14k×4 选,
   可用 limit 先跑 2k 作趋势);GSM8K ~1-2h;CUTE/CharBench ~0.5 天开发。
 
