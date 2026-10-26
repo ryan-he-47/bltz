@@ -107,8 +107,17 @@ def test_adapter_consistency() -> None:
     # 空 context 的 PMI 分支可运行
     uncond = lm.unconditional_loglikelihood(vu)
     assert uncond == uncond  # not NaN
+    # 批量 PMI(含 padded 链)必须与逐条一致且无 NaN(2026-10-27 全 pad 行事故)
+    from mc_eval import batch_unconditional
+    chains = [lm._split_units(ctx, " " + c)[1] for c in ["a liquid", "a solid"]]
+    chains.append([b"gas "])
+    batch = batch_unconditional(lm, chains)
+    single = [lm.unconditional_loglikelihood(c) for c in chains]
+    for x, y in zip(batch, single):
+        assert x == x, "batch unconditional produced NaN"
+        assert abs(x - y) < 1e-3, (x, y)
     print(f"[PASS] adapter consistency (S_raw={ll:.3f}, n_units={len(vu)}, "
-          f"S_uncond={uncond:.3f})")
+          f"S_uncond={uncond:.3f}, batch-pmi OK)")
 
 
 if __name__ == "__main__":

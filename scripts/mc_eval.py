@@ -95,6 +95,15 @@ def batch_unconditional(lm: BltzEvalLM, chains: list[list[bytes]]) -> list[float
             ids[b, i, :n] = torch.from_numpy(
                 np.frombuffer(u[:n], dtype=np.uint8).astype(np.int64))
             pm[b, i, :n] = False
+        # 填充位必须是"合法 unit"(不能全 mask:AE 编码器对全 pad 行会出 NaN,
+        # 2026-10-27 实测 -> 污染整批;填该链最后一个真实 unit,其输出不参与求和)
+        if len(units) < S:
+            last = units[-1]
+            n = min(len(last), L)
+            for i in range(len(units), S):
+                ids[b, i, :n] = torch.from_numpy(
+                    np.frombuffer(last[:n], dtype=np.uint8).astype(np.int64))
+                pm[b, i, :n] = False
     lam = lm.model.encode_units(ids, pm)                 # (B,S,D)
     x = torch.cat([lm.model.bos.expand(B, 1, -1), lam[:, :-1]], dim=1)
     h = lm.model.backbone(lm.model.adapter(x))           # (B,S,d_model)
