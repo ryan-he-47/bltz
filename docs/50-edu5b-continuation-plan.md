@@ -277,7 +277,7 @@
 | 5 | 冒烟 | `sbatch slurm/bltz_word_edu5b_smoke.sbatch`;核对 §3 四项 | 🔄 已提交(2026-10-27 03:5x) |
 | 6 | 正式训练 | `sbatch slurm/bltz_word_edu5b.sbatch`;记下 job id;按 §4 稀疏监控 | ⏳ 待冒烟通过 |
 | 7 | 训练完成核对 | `tail train.log` 到 step 70,861、lr→0;ckpt 完整性 | ⏳ |
-| 8 | E1 post-eval | `slurm/bltz_edu5b_post_eval.sbatch`(三个 ckpt)→ `mc_eval_*.json` + accept log | ⏳ |
+| 8 | E1 post-eval | `slurm/bltz_edu5b_eval.sbatch`(三 ckpt 统一评)→ `mc_eval_*.json` + accept log | ⏳ |
 | 9 | E2 生成对比 | `checkpoints/word_edu5b_gen_samples.md` | ⏳ |
 | 10 | 写实验记录 | docs/39 新条目(编号接 #46 后);更新 docs/40/AGENTS;提交 | ⏳ |
 
@@ -291,6 +291,7 @@
 
 - 本文件 `docs/50-edu5b-continuation-plan.md`
 - `slurm/bltz_word_edu5b.sbatch`(正式训练)· `slurm/bltz_word_edu5b_smoke.sbatch`(冒烟)
-- (执行阶段产出)`$SCRATCH/ckpts/word_edu5b/`、`$SCRATCH/mc_eval/*.json`、
-  `$SCRATCH/data/edu_eval.pkl`、`checkpoints/word_edu5b_accept.log`、
+  · `slurm/bltz_edu5b_eval.sbatch`(训练后三 ckpt 统一评估;替代原 pre/post 两个旧文件)
+- (执行阶段产出)`$SCRATCH/ckpts/word_edu5b/`、`$SCRATCH/mc_eval/mc_eval_{p2pre,cpts7,edu5b}.{json,md}`、
+  `$SCRATCH/data/edu_eval.pkl`、`checkpoints/word_{p2pre,cpts7,edu5b}_accept.log`、
   `checkpoints/word_edu5b_gen_samples.md`、docs/39 新条目
