@@ -171,12 +171,13 @@
 | Tier 2 验收 | IFEval+MMLU(limit/全量)+GSM8K+旧分布回归 | 半天~1 天(含开发) |
 | **磁盘** | SFT cache ≈4GB + 滚动 ckpt ≈20-25GB | **需先释放 ≥85GB(见 §4.4)** |
 
-### 4.4 磁盘/配额(2026-10-26 实测,**SFT 前置阻塞项**)
+### 4.4 磁盘/配额(2026-10-26 实测,**SFT 前必须先清理**)
 
 - 集群个人 scratch **软配额 300GiB**;实测用量 **355.8GiB(已超 55.8GiB)**:
   `bltz` 276GB(ckpts 114G + data 162G)+ `cose` 54G(其它项目,勿动)+
-  `qwen35` 27G(训练必需 tokenizer)+ 杂项。
-- SFT 需额外 ~30GB(cache≈4GB + 滚动 ckpt≈20-25GB)→ 必须先释放 ≥85GB。
+  `qwen35` 27G(训练必需 tokenizer)+ 杂项。硬限 1TiB 尚未触发强制性限制,
+  但按项目规约(300GB)必须先清理再开新阶段。
+- SFT 需额外 ~30GB(cache≈4GB + 滚动 ckpt≈20-25GB)→ 建议先释放 ≥85GB。
 - **已备好裁剪清单**(2026-10-26 dry-run job 692688 验证):`scripts/prune_ckpts.py`
   + `slurm/bltz_prune_ckpts.sbatch`(默认 dry-run,`--apply` 才删;只按显式清单
   删,不 glob)。**可释放 ≈103GB**:已完成 run 的滚动全状态 ckpt(`ckpt_full*`)
