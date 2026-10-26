@@ -209,10 +209,15 @@ p2→终态 **-10.218 nats、EM +5.21pp**(退火段代码/数学确实入模,π 
 但旧分布与下游 benchmark 均无通用能力增益;0.5B 在累计 20B units 尺度上
 的能力深度问题与 docs/39 #35 同构。** 决策点(M 档 vs SFT)见 docs/40。
 
-## 5. SFT 阶段(续训验收后启动)
+## 5. SFT 阶段(续训验收后启动;施工方案已成文 → **docs/48**)
 
 - **配方(已拍板)**:纯通用 SFT = smol-smoltalk 全量 ~460k(Apache 2.0,
   0.5B 档唯一公开证据配方);不掺字符合成(缓议,视 benchmark 结果再议)。
+- **施工方案见 `docs/48-sft-construction-plan.md`**(2026-10-26 起草):
+  数据实测(484,570 对话/≈396M units/epoch/2015 步/epoch≈6.3h)、模板
+  (`<|system|>`/`<|user|>`/`<|assistant|>`/`<|end|>`,target=assistant+end,
+  prompt mask 73%)、cache 格式(`unit_loss.npy` 新增)、最小代码改动清单
+  (shards/objectives/trainer init_ckpt)、冒烟与 Tier 2 验收、待拍板项。
 - **模板**:EvaByte 先例 Llama-3 chat 式,`<|user|>…<|assistant|>…<EOS>`,
   loss 只算 assistant 段+EOS,prompt mask;标记走 BPE 兜底进 unit 流。
 - **序列预算**:4096 units ≈ 4-5k BPE tokens 当量,smol-smoltalk 截断率低。
@@ -249,5 +254,6 @@ p2→终态 **-10.218 nats、EM +5.21pp**(退火段代码/数学确实入模,π 
    `commonsenseqa`);
 7. ☑ 续训验收(Tier 1)→ 对表完成 → **M 档续投 vs SFT 待用户拍板**
    (§4.1;验收日志 `checkpoints/word_cpt_s_accept.log`);
-8. ☐ SFT 施工方案成文 → 数据到位(smol-smoltalk 已在
-   `$SCRATCH/data/sft/`)→ SFT → Tier 2 验收。
+8. ☑ SFT 施工方案成文(**docs/48**,2026-10-26,含数据实测/模板/cache/
+   代码改动/Tier 2,待用户拍板)→ ☑ 数据到位(`$SCRATCH/data/sft/`,
+   484,570 对话)→ ☐ SFT → ☐ Tier 2 验收。

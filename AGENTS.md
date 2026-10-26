@@ -30,9 +30,11 @@
   units——snap-500k bpb **2.539**、NLL **-40.69**、byteCE 4.89、
   top5 40.4%、mode EM 26.3%、NMI(h) 0.271 > λ 0.257。
 - **下一阶段(用户 10-09 拍板;S 档已验收)→ 当前决策点**:
-  **SFT** 先纯通用 smol-smoltalk 全量(`$SCRATCH/data/sft/` 已就绪),
-  benchmark 验秤看字节能力是否涌现;与 **M 档继续加数据**二选一,推荐
-  SFT 先行(理由与选项见 docs/40"下一个决策点")。**待用户拍板。**
+  **SFT** 先纯通用 smol-smoltalk 全量(`$SCRATCH/data/sft/` 已就绪,
+  实测 484,570 对话≈396M units/epoch≈6.3h);**施工方案已成文
+  `docs/48-sft-construction-plan.md`(2026-10-26,待拍板:模板/cache/代码
+  改动/Tier2 + 6 项待定)**;与 **M 档继续加数据**二选一,推荐 SFT 先行
+  (理由与选项见 docs/40"下一个决策点")。**待用户拍板。**
 
 - **三废除(09-29 拍板)**:非确定性切词(纯 BPE bpb -15% 实证)、
   非线性 GMM 头(深度阶梯单调反证,mdn_depth=0 默认)、分量-词对应

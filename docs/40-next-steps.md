@@ -68,9 +68,9 @@
      且 SFT 推迟。若选 M,建议**:先 SFT 小规模验秤再决定**,或选
      数据侧改进(代码/数学补量已记录在 docs/43 §3.4)。
    - **SFT**(原计划,用户 10-09 拍板):smol-smoltalk 全量已在
-     `$SCRATCH/data/sft/`;需先写施工方案(chat 模板/EOS/loss mask/
-     4096 units 预算)+ Tier 2 电池(IFEval 门槛+MMLU/GSM8K 回归+
-     CUTE/CharBench instruct 版)。
+     `$SCRATCH/data/sft/`(484,570 对话,实测 ≈396M units/epoch ≈6.3h);
+     **施工方案已成文 `docs/48-sft-construction-plan.md`(2026-10-26,待拍板)**,
+     含模板/cache 格式/代码改动/Tier 2 电池与 6 项待拍板点。
    - 推荐:**SFT 先行**(验收已表明 CPT 的增量主要是域适配,继续 CPT
      的边际信息量下降;SFT 才能回答"字节能力是否经格式激发涌现"的
      验秤问题)。—— 待用户拍板。
