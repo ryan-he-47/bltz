@@ -119,8 +119,9 @@
 - `slurm/bltz_word_edu5b_smoke.sbatch` —— 50 步冒烟(独立 ckpt 目录)
 
 冒烟验收项(全部通过才发正式):
-1. 第 1 步 loss 与"p2 分支 ckpt 在该数据流上的 loss"一致(冒烟本身给出基准值,
-   正式 run 前 50 步应逐位复现冒烟前 50 步 loss);
+1. 第 1 步 loss 与"p2 分支 ckpt 在该数据流上的 loss"一致(冒烟本身给出基准值;
+   冒烟用 `log_every=10`,因此日志含 step 45430/45440/45450 的首步与前期 loss,
+   正式 run 前 50 步应逐位复现冒烟在 45450 处的 loss 及后续同名可见步);
 2. 无 NaN/Inf、无 spike_skip;步速 ≈10.5–11.5 s/步;显存峰值 ≤26GB;
 3. `train.log` 起始 step=45429、lr 首步 ≈ 2e-4×(1/500);
 4. 衰减起点/终点/decay_frac 在日志头部可核对。

@@ -46,6 +46,7 @@ $PY -m torch.distributed.run --nproc_per_node=2 --master_port=29542 \
   --set train.rewarmup=500 \
   --set train.batch=24 --set train.lr=2.0e-4 --set train.warmup=2000 \
   --set train.steps=45479 --set train.decay_frac=0.0 --set train.final_frac=1.0 \
+  --set train.log_every=10 \
   --set train.ckpt_every=25 --set train.ckpt_keep=1 \
   --set train.milestone_every=1000000 \
   --set train.ckpt_dir="$CKPT" \
