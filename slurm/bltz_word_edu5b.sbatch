@@ -47,6 +47,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export OMP_NUM_THREADS=4
 
 cd "$REPO"
+echo "[env] host=$(hostname) job=${SLURM_JOB_ID:-?} node_gpus=$(nvidia-smi -L 2>/dev/null | tr '\n' '|')"
 git pull --ff-only || echo "[train] git pull failed, using existing checkout"
 
 trap 'echo "[sig] SIGTERM at elapsed ${SECONDS}s (wall)"; :' TERM
