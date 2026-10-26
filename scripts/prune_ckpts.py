@@ -12,8 +12,9 @@ explicit list — it never globs a directory to wipe.
 Keep-list rationale:
   * p2  last.pt / best.pt / ckpt_pre_decay.pt  -> old-dist eval baseline +
     S-tier branch point (docs/41 assets);
-  * CPT stable last/best, anneal last/best/pre_decay/s0095000 -> acceptance
-    assets; CPT terminal weights = SFT init / M-tier candidate;
+  * CPT stable last/best + s0070000 (kept as the edu5b matched-compute
+    comparator, docs/50 §8), anneal last/best/pre_decay/s0095000 ->
+    acceptance assets; CPT terminal weights = SFT init / M-tier candidate;
   * AE best.pt, all data caches (活资产), SFT data.
 Delete-list rationale: rolling full-state ckpts of FINISHED runs (optimizer
 state is useless once a run is done; weights of the same step exist as
@@ -63,7 +64,8 @@ DELETE_MANIFEST: list[tuple[str, str]] = [
     ("ckpts/word_cpt_s_stable/ckpt_s0055000.pt", "finished-phase milestone"),
     ("ckpts/word_cpt_s_stable/ckpt_s0060000.pt", "finished-phase milestone"),
     ("ckpts/word_cpt_s_stable/ckpt_s0065000.pt", "finished-phase milestone"),
-    ("ckpts/word_cpt_s_stable/ckpt_s0070000.pt", "finished-phase milestone"),
+    # s0070000 KEPT: matched-compute comparator for the edu5b experiment
+    # (docs/50 §8 item 3, +24,571 steps vs edu5b's +25,432); 1.93GB, do not delete.
     ("ckpts/word_cpt_s_stable/ckpt_s0075000.pt", "finished-phase milestone"),
     ("ckpts/word_cpt_s_stable/ckpt_s0080000.pt", "finished-phase milestone"),
     ("ckpts/word_cpt_s_stable/ckpt_s0085000.pt", "finished-phase milestone"),

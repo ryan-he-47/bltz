@@ -1,4 +1,4 @@
-# 50. FineWeb-Edu 单语料续训 5B units —— 病因定位实验施工计划(待拍板)
+# 50. FineWeb-Edu 单语料续训 5B units —— 病因定位实验施工计划(已拍板,执行中)
 
 > 起草 2026-10-27。用户口径:"所有指征显示本次续训成果不达预期,预计的主题一致性、
 > 事实记忆都没有出现,继续深究价值不大;为了排查病因,定位是改换数据集的训练动力学
@@ -7,7 +7,7 @@
 > loss 轨迹平滑接续 p2 稳定段末尾的 loss 轨迹;本次续训不考虑扩充数据集、代码/数学
 > 语料退火,只关心在单一高质量语料(FineWeb-Edu)上,续训是否带来能力增量。"
 >
-> 本文是**施工计划(未执行,待拍板)**。执行者按 §9 的 checklist 逐步作业;所有路径/
+> 本文是**施工计划(2026-10-27 已拍板,执行中;拍板结果见 §8)**。执行者按 §9 的 checklist 逐步作业;所有路径/
 > 命令/判据自包含,可跨会话恢复。相关前置文档:[docs/43](docs/43-continued-training-plan.md)
 > (CPT S 档配方)、[docs/38](docs/38-eval-reference.md)(评估协议)、
 > [docs/49](docs/49-mc-scoring-unit-space.md)(现行 MC 口径)、docs/39 #43/#46(验收/口径历史)。
@@ -95,18 +95,19 @@
   近墙自投下一段;手动 STOP 不触发;非零崩溃不重投)。
 - 落盘时间:预计 **约 3.5 天**(含排队)。
 
-### 2.2 scratch 预算(必须先腾空间)
+### 2.2 scratch 预算(2026-10-27 实测 + 拍板处理)
 
-- 现状:`$SCRATCH/bltz` = **276GB**(data 162G + ckpts 114G),soft quota 300GB。
-- 本实验 ckpt 估算:滚动 full 3×5.75GB + last/best/pre_decay 3×1.93GB +
-  5 个里程碑(50k/55k/60k/65k/70k)×1.93GB ≈ **33GB** → 276+33=309GB 超 soft。
-- **前置动作(需批准)**:执行既有 prune 清单
-  `sbatch slurm/bltz_prune_ckpts.sbatch --apply`,回收 **102.7GB(95.6GiB)**
-  (清单见 `scripts/prune_ckpts.py`;保留 p2 last/best/pre_decay、CPT last/best、
-  AE、全部数据缓存)。回收后 173GB + 33GB ≈ **206GB**,安全。
-- ⚠️ **顺序约束**:prune 会删除 `ckpts/word_cpt_s_stable/ckpt_s0070000.pt`
-  (同算力对照 ckpt)。**必须先跑 §5 的 pre-eval(含 CPT s0070000),再 prune**;
-  或临时从清单剔除该文件(1.93GB)。
+- **现状**(用户自行清理部分 ckpt 后实测):`$SCRATCH/bltz` = **238GiB**
+  (ckpts 76GiB + data 161GiB + hf_cache 0.22GiB + venv_lmeval 0.12GiB);
+  soft quota 300GB。
+- 本实验 ckpt 估算:滚动 full 3×5.36GiB + last/best/pre_decay 3×1.79GiB +
+  5 个里程碑(50k/55k/60k/65k/70k)×1.79GiB ≈ **30GiB**
+  → 238 + 30 = **268GiB**,在 soft quota 内(余量 ~32GiB)。
+- **拍板结果(2026-10-27)**:不执行 prune 作业(用户已自行清理,空间已够);
+  hf_cache 仅 0.22GiB,清理无意义 → 不动。训练期间若撞 quota 告警,处置见 §7。
+- **保留资产(评估/对照用,勿删)**:p2 `ckpt_pre_decay.pt` / `last.pt` / `best.pt`、
+  CPT `word_cpt_s_stable/ckpt_s0070000.pt`(同算力对照)、`word_cpt_s_anneal/last.pt`、
+  AE `ae_48_256_word_full/best.pt`、全部 data cache。
 
 ---
 
@@ -190,21 +191,22 @@
    (正确 vs 错误续写,unit-space 打分),p2 分支 vs endpoint 对比。
 7. 逐任务表 + stderr + 长度诊断(docs/49 §5)必须完整落盘,不允许只报均值。
 
-### 5.3 评估作业安排
+### 5.3 评估作业安排(2026-10-27 拍板:评估预算延后,训练结束后统一执行)
 
-- **E0(训练前,释放 GPU 窗口)**:2 GPU 作业
-  - GPU0:`mc_eval.py` → p2 `ckpt_pre_decay`(8 项全量)
-  - GPU1:`mc_eval.py` → CPT `ckpt_s0070000`
-  - 同一作业 CPU 端先 `dump_eval_pkl` 生成 `edu_eval.pkl`
-  - 约 2–2.5h;结果 `$SCRATCH/mc_eval/mc_eval_{p2pre,cpts7}.json`
-- **E0b(训练前,可选)**:单卡 `run_accept.py` p2 pre_decay 四段(≈40–60min)
-- **E1(训练后,2 GPU)**:
-  - GPU0:`mc_eval.py` → `word_edu5b/last.pt`
-  - GPU1:`run_accept.py` → `word_edu5b/last.pt`(四段 + edu NLL)
-  - 附加:edu5b 里程碑旧分布 NLL 曲线(单卡顺序,~5min/个)
+> **拍板**:用户指示"评估预算等训完再说"。因此 **E0 训练前 baseline 不在起飞前跑**;
+> 训练结束后用一个 GPU 窗口统一评三个 ckpt(p2 分支 / CPT s0070000 / edu5b endpoint)。
+> 前提:以上 ckpt 训练期间不得删除(已列入 §2.2 保留资产;prune 不执行)。
+
+- **E0+E1(训练后,2 GPU 作业,~4–6h)**:
+  - GPU0:`mc_eval.py` → 依次 p2 `ckpt_pre_decay`、CPT `ckpt_s0070000`、edu5b `last.pt`
+    (8 项全量,~50–70min/个)
+  - GPU1:`run_accept.py` → 同上三个 ckpt 的内部四段 + edu NLL
+    (CPU 端先 `dump_eval_pkl.py $SCRATCH/data/cpt_cache_edu $SCRATCH/data/edu_eval.pkl`)
+  - 结果:`$SCRATCH/mc_eval/mc_eval_{p2pre,cpts7,edu5b}.json`、
+    `checkpoints/word_edu5b_accept.log`
 - **E2(训练后,生成对比)**:p2 pre_decay vs edu5b 的 8 prompt × 6 读出并排文档
-  (产 `checkpoints/word_edu5b_gen_samples.md`,供用户目检);事实 cloze 探针
-  (若批准)。
+  (产 `checkpoints/word_edu5b_gen_samples.md`,供用户目检)。
+- **不做**:事实 cloze 探针(2026-10-27 拍板:不加)。
 
 > 说明:用户已取消 CPT vs p2 的**验收重测**;本计划中的 MC 基线/对照仅服务于本
 > 实验的 H1/H2 判别(分支基线 + 同算力对照),不重开 CPT 验收结论。
@@ -237,7 +239,7 @@
 | 风险 | 缓解 |
 |---|---|
 | 队列拥挤(2 GPU × 3 天,QOS 2 卡) | 起飞前 `sinfo` 体检;若 gpu_v100s 无空闲,等窗口或与用户确认 stingy 备选(单卡/更慢) |
-| scratch 超 soft quota | 先 prune(--apply,102.7GB);若未批,先用 `ckpt_keep=2`+`milestone_every=10000` 压缩到 ~20GB 方案(需改 §2 参数) |
+| scratch 超 soft quota | 实测 238GiB + ~30GiB = 268GiB < 300GB(2026-10-27);若训练期间撞告警,优先删 2026-09 旧消融 ckpt(`v2_*`,14.8GB,已在 prune 清单)或 CPT stable 旧里程碑 |
 | 墙杀/重投 | 内置 auto-resubmit + STOP;日志判据只看 train.log |
 | Adam 重置导致早期 loss 波动 | rewarmup=500(CPT 验证);前 1,000 步重点监控,异常即停 |
 | 单语料过拟合/退火不足 | 预注册判据只认 **旧分布遗忘红线 + MC acc_unit**;in-domain NLL 不作能力证据 |
@@ -247,33 +249,37 @@
 
 ---
 
-## 8. 待拍板项(执行前逐项确认)
+## 8. 拍板结果(2026-10-27,全部落定)
 
-1. **LR 尾**:WSD 末 2,543 步(10% of new data)线性退到 0(**推荐**,与 CPT 同形)→
-   还是纯 plateau 到 5B 结束(对比更"纯",但 endpoint 未退火)?
-2. **prune --apply**:批准执行 102.7GB 回收(否则按 §7 的 ckpt 压缩备选)?
-3. **同算力对照**:是否纳入 CPT `s0070000`(需在 prune 前评估;推荐)?
-4. **事实 cloze 探针**:是否加(20–40 条,GPU 成本可忽略;直接回应"事实记忆"关切)?
-5. **分支点确认**:`ckpt_pre_decay@45429`(推荐,平滑接续/与 CPT 同分支)vs p2 `last@50863`(需 re-warm 到 2e-4,loss 会跳)。
-6. **评估预算**:E0+E1 合计约 4–6 GPU·小时(两个窗口),是否按 §5.3 全部执行?
+| # | 项 | 拍板 | 影响/落地 |
+|---|---|---|---|
+| 1 | LR 尾 | **WSD 末 2,543 步线性退到 0**(`decay_frac=0.035887`,`final_frac=0.0`) | 与 CPT 同形;§2 参数不变 |
+| 2 | prune | **不执行 prune 作业**;用户已自行清理,实测 238GiB + 本实验 ~30GiB = 268GiB < 300GB;hf_cache 仅 0.22GiB 无需清 | §2.2 已更新;无 102.7GB 回收 |
+| 3 | 同算力对照 | **纳入 CPT `ckpt_s0070000`**(+24,571 步混合数据) | 评估矩阵含该 ckpt;列入保留资产 |
+| 4 | 事实 cloze 探针 | **不加** | E2 只做生成并排 |
+| 5 | 分支点 | **`word_05b_p2/ckpt_pre_decay.pt` @ step 45429**(weight-only) | §2 不变 |
+| 6 | 评估预算 | **延后到训练结束再定**("等训完再说") | E0 不在起飞前跑;E1/E2 训练后统一执行(§5.3) |
+
+**执行状态(2026-10-27 03:5x)**:冒烟作业(`slurm/bltz_word_edu5b_smoke.sbatch`)
+已提交;正式训练在冒烟通过后提交。job id / 最终状态记在 §10 与 docs/39 新条目。
 
 ---
 
 ## 9. 执行 checklist(拍板后按序)
 
-| # | 动作 | 命令/产物 | 预估 |
+| # | 动作 | 命令/产物 | 状态 |
 |---|---|---|---|
-| 0 | 读 §8 拍板项并确认 | 用户回复 | — |
-| 1 | 起飞前体检 | `sinfo -N -o '%N|%C|%O|%G|%t'`;`squeue -u yihe47` | 1min |
-| 2 | 生成 edu eval pkl | `sbatch` tiny: `scripts/dump_eval_pkl.py data/cpt_cache_edu data/edu_eval.pkl` → `$SCRATCH/data/edu_eval.pkl` | ~5min |
-| 3 | E0 pre-eval(CPT s0070000 必须在 prune 前) | `sbatch slurm/bltz_edu5b_pre_eval.sbatch` → `$SCRATCH/mc_eval/mc_eval_p2pre.json`,`mc_eval_cpts7.json` | ~2.5h |
-| 4 | prune | `sbatch slurm/bltz_prune_ckpts.sbatch --apply`;核对 `du -sh $SCRATCH/bltz` ≈173G | ~10min |
-| 5 | 冒烟 | `sbatch slurm/bltz_word_edu5b_smoke.sbatch`;核对 §3 四项 | ~30min |
-| 6 | 正式训练 | `sbatch slurm/bltz_word_edu5b.sbatch`;记下 job id;按 §4 稀疏监控 | ~80h/2 墙 |
-| 7 | 训练完成核对 | `tail train.log` 到 step 70,861、lr→0;ckpt 完整性 | 5min |
-| 8 | E1 post-eval | `sbatch slurm/bltz_edu5b_post_eval.sbatch` → `mc_eval_edu5b.json` + `word_edu5b_accept.log` | ~2.5h |
-| 9 | E2 生成对比 + cloze(若批) | `checkpoints/word_edu5b_gen_samples.md`;cloze JSON | ~1h |
-| 10 | 写实验记录 | docs/39 新条目(编号接 #46 后);更新 docs/40/AGENTS;提交 | — |
+| 0 | 读 §8 拍板项并确认 | 用户 2026-10-27 已拍板(§8) | ✅ 已完成 |
+| 1 | 起飞前体检 | `sinfo`/`squeue`;分支 ckpt、对照 ckpt、edu cache 实测核对 | ✅ 2026-10-27 03:34 通过(队列空;ckpt/cache 全在;meta=5,348,918,922 units) |
+| 2 | 生成 edu eval pkl | 并入训练后 E0+E1 窗口(§5.3) | ⏭ 延后(拍板 6) |
+| 3 | E0 pre-eval | **推迟**:训练后与 edu5b 一起评三个 ckpt(§5.3) | ⏭ 延后(拍板 6) |
+| 4 | prune | **取消**:空间已够(238→268GiB < 300GB) | ⛔ 不执行(拍板 2) |
+| 5 | 冒烟 | `sbatch slurm/bltz_word_edu5b_smoke.sbatch`;核对 §3 四项 | 🔄 已提交(2026-10-27 03:5x) |
+| 6 | 正式训练 | `sbatch slurm/bltz_word_edu5b.sbatch`;记下 job id;按 §4 稀疏监控 | ⏳ 待冒烟通过 |
+| 7 | 训练完成核对 | `tail train.log` 到 step 70,861、lr→0;ckpt 完整性 | ⏳ |
+| 8 | E1 post-eval | `slurm/bltz_edu5b_post_eval.sbatch`(三个 ckpt)→ `mc_eval_*.json` + accept log | ⏳ |
+| 9 | E2 生成对比 | `checkpoints/word_edu5b_gen_samples.md` | ⏳ |
+| 10 | 写实验记录 | docs/39 新条目(编号接 #46 后);更新 docs/40/AGENTS;提交 | ⏳ |
 
 **监控/恢复**:任何会话恢复先读本文件 + AGENTS 当前状态;`ssh` 只看 `train.log`;
 停 run 用 `touch $SCRATCH/ckpts/word_edu5b/STOP`;墙自续投看 `logs/word_edu5b_%j.out`
