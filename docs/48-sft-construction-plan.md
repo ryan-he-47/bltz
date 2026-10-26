@@ -154,6 +154,10 @@
   (modes-peak 采样),**SFT 前需加**:`generate_until` 的 stop 序列透传
   (`<|end|>`)与 chat 模板注入(把 harness 的 context 包成
   `<|user|>…<|assistant|>`);~0.5 天。
+- **任务可用性(2026-10-26 在集群 venv 实测)**:lm-eval 0.4.13 已内置
+  `ifeval`、`mmlu`、`mmlu_pro`、`gsm8k`、`gsm8k_cot`、`minerva_math`、
+  `lambada_openai` 及 8 项 MC 任务(共 14,689 个具名 task handle),无需自写
+  YAML(仅 CUTE/CharBench 需另接)。
 - 预算:IFEval ~1-2h(541 prompts,生成式);MMLU 5-shot ~3-4h(14k×4 选,
   可用 limit 先跑 2k 作趋势);GSM8K ~1-2h;CUTE/CharBench ~0.5 天开发。
 
@@ -161,7 +165,7 @@
 
 | 阶段 | 内容 | 墙钟 |
 |---|---|---|
-| cache 构建 | 396M units 切词+verify(CPU+1 GPU) | ~2-4h(1 个 stingy job) |
+| cache 构建 | 396M units 切词+verify(CPU+1 GPU) | **≈2.5-3.5h**(实测:切词 198 convs/s→全量单进程 40.7min/4-worker 10min;AE verify **45k units/s on V100**→≈2.5h;+写盘) |
 | 冒烟 | 3 步 | ~15 min |
 | SFT 训练 | 1 epoch(2015 步) | **≈6.5-7h**;2 epochs ≈13h(单段 3 天墙内,无需跨墙) |
 | Tier 2 验收 | IFEval+MMLU(limit/全量)+GSM8K+旧分布回归 | 半天~1 天(含开发) |
@@ -228,5 +232,13 @@ sbatch slurm/bltz_sft_probe.sbatch
 # 模板/marker 验证(已完成,job 692652;三变体 × AE verify)
 sbatch slurm/bltz_sft_template.sbatch
 # 结果:$SCRATCH/data/sft_template_probe.json + logs/sft_template_692652.out
+
+# 构建预算实测(2026-10-26):
+#   切词吞吐(CPU,登录节点秒级)= scripts/probe_sft_build_speed.py
+#     -> 198 convs/s = 0.156M units/s;全量 40.7min 单进程 / ~10min 4-worker
+#   AE verify 吞吐(GPU,stingy 1 卡)= scripts/probe_sft_verify_speed.py
+#     -> 45k units/s on V100 => 396M units ≈ 2.5h
+sbatch slurm/bltz_sft_verify_speed.sbatch
+# 结果:logs/sft_vspeed_692711.out
 ```
 
