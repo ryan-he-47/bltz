@@ -27,6 +27,16 @@
   一致)。**旧 lm-eval 数字(32.63/32.54 等)已作废**(其 raw pushforward 总分
   被候选字节长度支配:ARC-Easy r=−0.86、argmax=最短 47.5%)。
   **下一步:集群双卡重跑 8 项(p2+CPT,`slurm/bltz_mc_eval.sbatch`),需用户批准。**
+- **下一实验计划(2026-10-27,待拍板)**:用户判定 S 档续训不达预期,转向**病因
+  定位**——从 p2 稳定段末尾 `ckpt_pre_decay@45429` 分支,**只用 FineWeb-Edu**
+  (CPT 新增 edu 缓存 5.349B units,路径 `$SCRATCH/data/cpt_cache_edu`)续训
+  **+5B units(+25432 步,终点 70861,末 2543 步退火到 0)**,不扩数据、不混
+  DCLM、不做代码/数学退火;同期用 CPT `s0070000`(+24.6k 步混合数据)作同算力
+  对照,区分 H1(数据切换/混合动力学)vs H2(0.5B 能力上限)。**施工计划 =
+  `docs/50-edu5b-continuation-plan.md`**;sbatch 已备
+  (`slurm/bltz_word_edu5b{,_smoke}.sbatch`、`slurm/bltz_edu5b_{pre,post}_eval.sbatch`,
+  **均未提交**)。**待用户拍板 docs/50 §8 六项**(LR 尾/prune --apply/同算力对照/
+  事实 cloze 探针/分支点确认/评估预算)后执行;新实验需先 prune 102.7GB。
 
 - **CPT S 档完成 + 验收(2026-10-26,step 96292,docs/39 #43)**:
   三段墙(661426 72h + 674254 72h + 688841 ~14h)≈158h,新增 +50863 步
