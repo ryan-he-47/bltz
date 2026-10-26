@@ -163,20 +163,20 @@ py+js 池全量仅 114M units(代码不足 10%);finemath 小 shard 化后 2 片
 
 按 docs/42 C 报告 Tier 1 电池,分两层:
 
-1. **内部协议(现有,必跑)**:docs/38 全套五段——snap-500k bpb(旧分布,
-   兼作遗忘监控)、held-out NLL、byteCE、mode EM、top5、NMI;生成目检
-   (modes-peak/τ 采样,正向维度口径,禁循环否决项)。
-2. **lm-eval-harness(已接入,10-18 完成)**:自定义 LM 子类
-   (`scripts/lmeval_bltz.py`,register_model("bltz"),三方法全实现,自带
-   simple_evaluate 入口+--selftest);本机双验证通过(bltz hellaswag
-   limit32 三模式出数 + distilgpt2 对拍 acc/acc_norm 契约同构)。
-   **⚠️ 口径注记(实测发现,验收行文必须携带)**:unit 级 GMM 密度 NLL
-   绝对值随 unit 字节长度变化极弱(NLL 约与 unit 数成正比),harness 的
-   acc_norm 按 continuation 字节归一 → **系统性偏向长候选**(合成电池:
-   acc 4/5 金标 vs acc_norm 1/5)。**多选任务主口径 = pushforward_joint
-   score_mode + acc**;unit_nll 下只读 acc;acc_norm 谨慎解读。
-   遗留:集群跑电池前写 `slurm/bltz_lmeval.sbatch`(GPU 节点、$SCRATCH
-   路径、batch 4-8)。
+1. **内部协议(现有,必跑)**:docs/38 全套——snap-500k bpb(旧分布,
+   兼作遗忘监控)、held-out NLL、mode EM、top5、NMI;生成目检
+   (modes-peak/τ 采样,正向维度口径,禁循环否决项)。**pushforward byteCE
+   已于 2026-10-27 退役**(docs/49:它只是与字节 LM 比较 bpb 的旁证尺,
+   不是性能主口径;脚本已归档 `archive/`)。
+2. **lm-eval-harness(已接入,10-18 完成;2026-10-27 口径重做)**:自定义
+   LM 子类(`scripts/lmeval_bltz.py`),**MC 打分 = unit 嵌入空间 GMM 对数
+   似然**(候选 unit 的分数 = `−MDN NLL(λ(u)|h)`,与训练同函数);主指标
+   `acc_unit = argmax S_raw / n_units`(按 unit 数归一,等价 token LM 的 token
+   数归一),另报 `acc_raw` / `acc_char` / `acc_unit_pmi`(`scripts/mc_eval.py`,
+   docs/49)。**⚠️ 旧口径(2026-10-18~10-26)已废弃**:旧 `pushforward_joint+acc`
+   的 raw 总分被候选字节长度支配(ARC-Easy 实测 r=−0.86、argmax=最短 47.5%),
+   其 32.63/32.54 均分与逐任务数字**不可作为能力数字**,且 10-26 验收引用的
+   "均分 acc 32.63%"结论作废,待新口径全量重测(#46)。
 
 **判据口径**:与 p2 终态对表(bpb 2.539/NLL -40.69/EM 26.3%);文献预期
 +10B 全新数据有清晰可见的下探;遗忘红线=旧分布 snap bpb 退化 >0.02 时
@@ -184,10 +184,14 @@ py+js 池全量仅 114M units(代码不足 10%);finemath 小 shard 化后 2 片
 
 ### 4.1 验收结果(2026-10-26,**已执行**;详 docs/39 #43 + `checkpoints/word_cpt_s_accept.log`)
 
+> **2026-10-27 口径修订(docs/49 #46)**:验收电池由五段改为四段(删 pushforward
+> byteCE);lm-eval 部分旧 pushforward 口径作废,unit-space 口径的 8 项全量
+> 重测待集群批准。本文表格中的 byteCE 行与 lm-eval 均分**仅存档**。
+
 训练终态:688841 完成 B 段至 **step 96292**(A +45776 + B +5087 = +50863 步
-=10.0B units;lr 退到 3.9e-8)。验收 = docs/38 五段电池(本机,与 p2 同
+=10.0B units;lr 退到 3.9e-8)。验收 = docs/38 电池(本机,与 p2 同
 pkl/表/口径,先复跑 p2 得 -40.691/2.5390/0.2441 逐位一致)+ lm-eval 0-shot
-8 项(集群,CPT vs p2 双卡)+ 三分布对表(集群 job 692173/692208)。
+8 项(集群,CPT vs p2 双卡;旧口径,已废止)+ 三分布对表(集群 job 692173/692208)。
 
 | 旧分布(遗忘监控) | p2 | CPT 终态 | 判读 |
 |---|---|---|---|
@@ -195,19 +199,23 @@ pkl/表/口径,先复跑 p2 得 -40.691/2.5390/0.2441 逐位一致)+ lm-eval 0-s
 | held-out NLL | -40.691 | -40.942 | +0.251(轻微) |
 | top5 / EM argmax | 40.44 / 24.41% | 38.98 / 23.03% | -1.46 / -1.38pp(轻度读出退化) |
 | mode EM(snap 表) | 26.27% | 25.53% | -0.74pp |
-| pushforward byteCE | 4.8908 | 5.1533 | +0.26 = 退火锐化机制(深 Δ 恶化/浅 Δ 平) |
+| ~~pushforward byteCE~~(2026-10-27 退役) | 4.8908 | 5.1533 | +0.26 = 退火锐化机制(深 Δ 恶化/浅 Δ 平);该指标已退役,仅存档 |
 | NMI(h)/NMI(λ) | 0.271/0.257 | 0.269/0.257 | 持平 |
 
 **能力增益 vs 域适配(关键口径)**:新主缓存分布(cpt_cache_main)p2→终态
 **-3.850 nats**,但同批 ckpt 在旧分布仅 -0.251 nats 且 EM 为负 → ≈3.6 nats
 是**域适配/熵差追平**,不是通用能力提升;退火缓存分布(web88/code5/math7)
 p2→终态 **-10.218 nats、EM +5.21pp**(退火段代码/数学确实入模,π 轻微
-变锐无坍缩)。**lm-eval 0-shot 8 项(集群 692113,全量)**:均分 acc
+变锐无坍缩)。~~**lm-eval 0-shot 8 项(集群 692113,全量)**:均分 acc
 **32.63% vs p2 32.54%**(+0.09pp,噪声内;acc_norm -0.97pp),逐任务差
-≤2.6pp,两模型均在随机线附近 → **未见 CPT 的下游多选能力增益**。
+≤2.6pp,两模型均在随机线附近 → **未见 CPT 的下游多选能力增益**。~~
+**〔2026-10-27 废止(docs/49 #46):该数字用 pushforward raw 总分,被候选字节
+长度支配(ARC-Easy r=−0.86/argmax 最短 47.5%),不能作为能力结论;新口径
+unit-space `acc_unit` 的全量重测待集群批准。本段仅存档。〕**
 **结论:S 档完成度达标(退火到 0/健康/遗忘红线未触发/退火段入模),
 但旧分布与下游 benchmark 均无通用能力增益;0.5B 在累计 20B units 尺度上
-的能力深度问题与 docs/39 #35 同构。** 决策点(M 档 vs SFT)见 docs/40。
+的能力深度问题与 docs/39 #35 同构。**(下游部分的证据已按上文口径降级,
+待 #46 新口径重测后更新。)决策点(M 档 vs SFT)见 docs/40。
 
 ## 5. SFT 阶段(续训验收后启动;施工方案已成文 → **docs/48**)
 

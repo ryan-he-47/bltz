@@ -95,7 +95,7 @@ word 化;14 shards,46.0GB 文本);累计曝光 ≈14.4B units ≈ **1.57 遍**
   `checkpoints/word_05b_p2_last.pt`。
 - **验收/曲线产物**:`checkpoints/word_05b_p{1,2}_accept.log`、
   `viz/word_05b_p{1,2}_curve.png`、`viz/word_05b_p1p2_curve.png`。
-- **悬置**:①评测工具(snap/pushforward)掩码同口径未实施;②gen_long
+- **悬置**:①评测工具(snap)掩码同口径未实施(2026-10-27:pushforward 已退役,docs/49);②gen_long
   modes-peak 分支 isfinite 守卫待加;③SIGTERM 优雅存退在 torchrun 下
   不可靠(用 STOP 文件,已验证);④分隔符方案(U+2403 侦察完毕,未采用)。
 - **集群依赖**:xformers 0.0.29.post1(conda cose2);QOS 2 卡×3 天。

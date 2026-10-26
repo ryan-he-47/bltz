@@ -1,69 +1,45 @@
-"""bltz × lm-evaluation-harness adapter(docs/42 C 报告 §3.1 / docs/43 拍板⑧,2026-10-18).
+"""bltz × lm-evaluation-harness adapter(docs/49,2026-10-27 口径修订).
 
 模型: bltz 0.5B word 臂(冻结 AE ae_48_256_word_full + 骨干 + linear GMM 头)。
-读出硬性规则(AGENTS.md): 一律密度泛函(GMM mode / modes-peak 采样),严禁把
-分量均值当词用;生成循环带 isfinite 守卫(2026-10-09 p2 事故教训)。
 
-口径(与训练/held-out NLL 同构, docs/38):
-- 文本 -> utf-8 -> bltz.segment_v2.segment_word(word 臂确定性切词,
-  merge="prev" 默认) -> VerifyResplitter 在线核验重切(训练同管线,
-  pushforward word 臂同款; 可用 --noverify 关);
-- loglikelihood(context, continuation): context 与 continuation 分别切词后
-  拼接 unit 链(与 harness HF 路径同约定——接缝不跨 unit),continuation 的
-  每个 unit 的 NLL 以全部前序(含完整 context)为条件;context 超长时左截断
-  保住 continuation。返回总 logprob(nats)——harness 的 acc_norm 按
-  continuation 字节数归一,与本项目 bpb 口径天然同构(C §3.1),归一化由
-  harness 完成,我们不做任何额外处理。
-- loglikelihood_rolling: 滑窗整文 NLL(S=4096 units;首窗全计,后续窗重叠
-  半窗——每个 unit 恰好计一次且 context ≥ S/2;比 harness 默认 context_len=1
-  更宽松,属有文档的口径选择)。bpb = -logprob / n_bytes / ln2。
+打分口径(2026-10-27 用户拍板,docs/49,取代旧 pushforward 口径):
+- 骨干以 unit 为单位、在嵌入空间给出概率分布(K=64 对角 GMM over λ∈R^48),
+  因此打分直接在嵌入空间做:候选 unit 的分数 = GMM 在该 unit 的冻结 AE 嵌入
+  处的对数密度(与训练 MDN NLL 是同一个函数,确定性,无解码器/蒙特卡洛)。
+- continuation 分数 S_raw = Σ_{候选项} log p(λ(u_i) | 前文)(teacher forcing)。
+  长度不均衡按标准 token LM 的处理方式:主指标
+  acc_unit = argmax S_raw / n_units(项数 = unit 数,对应 token LM 的 token 数);
+  另报 acc_raw(标准 acc)与 acc_char(S_raw / 字符数,对齐 lm-eval acc_norm
+  的字符归一实现)。归一化指标由 scripts/mc_eval.py 计算,本适配器只忠实返回
+  S_raw(保持 LM API 语义)。
+- pushforward(整串字节概率)系列打分已于 2026-10-27 全部退役 —— 它只是当初
+  与字节 LM 比较 bpb 的旁证尺,不是性能主口径;脚本已归档 archive/。
+- 切词:ctx+cont 整段 segment_word(word 臂空格尾随约定)+ VerifyResplitter,
+  与训练同管线;跨缝 unit 归 context 不计分 —— 等价于标准 causal LM 的
+  "整段 tokenize 后按 context 长度切出 continuation",分隔符不构成一项。
+
+LM API:
+- loglikelihood(ctx, cont) -> (S_raw nats, is_greedy)。continuation 超长时
+  右截断;context 超长时左截断保住 continuation(与 harness 默认截断策略同向)。
+- loglikelihood_rolling:滑窗整文 NLL(S=4096 units;首窗全计,后续窗重叠
+  半窗,每个 unit 恰计一次且 context ≥ S/2;属有文档的口径选择)。
 - generate_until: modes-peak 采样(modes() 枚举局部众数 + 峰顶海拔
   log_dens 加权 + 核采样 0.95,docs/39 #36 翻案)+ isfinite 守卫(发散即停
-  该请求并记录,不伪造样本)+ stop 序列 + max_gen_toks 粗换算
-  (1 unit ≈ 5 字节 ≈ 1 常规 token,max_units = max_gen_toks,并上限
-  `--max-gen-units`,默认 256——适配器逐 unit 重算 context,长生成是 O(n²),
-  IFEval 类任务必须截断预算)。unit 解码为空串视作 EOS 停止(word 流无
-  stream 级 EOS 单元)。
-
-- **chat 模板(2026-10-26 新增,--chat-template;为 SFT 后 Tier 2 备)**:
-  生成侧把 harness context 包成 `<|user|>{context}<|assistant|>`,并自动追加
-  stop 序列 `<|end|>`;loglikelihood(MMLU 等)只包 context、continuation 照旧
-  计分(接缝不跨 unit 的约定不变)。**默认关闭** → 与 2026-10-18 行为逐位
-  一致(pre-training 口径基准数字可直接复用)。模板与 SFT 训练一致
-  (docs/48 §2.1:轮间无分隔符,target=assistant 内容+`<|end|>`)。
-
-口径发现(2026-10-18 本机验证,重要): unit 级 GMM 密度 NLL 的绝对值随
-unit 字节长度变化极弱(NLL 约与 unit 数成正比),而 harness acc_norm 按
-continuation 字符数归一——二者相乘系统性偏向长候选(长词 latent 更尖锐,
-总 NLL 高但摊到更多字符)。合成电池实测: 原始 total(acc 口径)4/5 金标
-正确,acc_norm 口径只剩 1/5。因此本适配器提供两种 score_mode:
-- "unit_nll"(默认,拍板处方): Σ_continuation unit 级 GMM NLL;多选题请读
-  **acc(未归一)**,acc_norm 在该口径下有系统性长度偏置(见上)。
-- "byte_marginal": 解码器 pushforward 字节边际(μ-plug 版 pushforward_bpb
-  口径): P(b|ctx,Δ) = Σ_k softmax(π)_k · P_dec(b|μ_k,Δ),continuation 得分
-  = Σ unit Σ 字节 log P_marg(不含 EOS,pushforward v3 口径)。按字节计分,
-  acc/acc_norm 一致且与 byteCE/bpb 协议同族。代价: 每位置 K×(L+1) 次解码器
-  查询(并行 FiLM 前向)。**局限(合成电池实测): 并行解码器在 unit 内逐 Δ
-  独立取边际,丢掉 unit 内字节相关性,长候选被错误拉平。**
-- "pushforward_joint"(多选题推荐): 精确字符串概率的层化 MC —
-  P(u|ctx) = Σ_k π_k · mean_m Π_Δ P_dec(u[Δ]|μ_k+σ_k ε_m, Δ)(同一 λ 跨 Δ
-  共享,保留 unit 内联合;含 EOS 终止事件——终止是字符串身份的一部分)。
-  m=8×K=64 每位置 512 条 λ,定数种子;短 continuation 无 underflow
-  (pushforward 文档的 e-40 地板只出现在长串)。acc/acc_norm 均可用。
+  该请求并记录,不伪造样本)+ stop 序列 + max_gen_units 上限(适配器逐 unit
+  重算 context 是 O(n^2),IFEval 类长生成必须截断预算)。
 
 本机用法(8GB GPU, batch 1 串行):
-  # 自带入口(推荐; 内部注册 bltz 模型并调 simple_evaluate):
-  E:\\MiniConda\\envs\\cose2\\python.exe scripts/lmeval_bltz.py \
-      --tasks hellaswag --limit 32
-  # 冒烟自检(不跑 harness, 只验证加载/切词/NLL/生成):
+  # 冒烟自检(不跑 harness):验证加载/切词/打分/生成
   E:\\MiniConda\\envs\\cose2\\python.exe scripts/lmeval_bltz.py --selftest
-  # 作为 lm_eval CLI 的自定义模型(需把本文件加入 harness 进程 import 链,
-  # 例如 PYTHONPATH=scripts 后 --model lmeval_bltz:BltzEvalLM 不适用本版
-  # 注册时机; 推荐用上面的自带入口):
+  # 8 项 MC 电池(新口径:acc_unit/acc_raw/acc_char/PMI):
+  E:\\MiniConda\\envs\\cose2\\python.exe scripts/mc_eval.py --ckpt ... --tag cpt_s
+  # harness 原生 acc 交叉验证(raw 口径):
   python -m lm_eval --model bltz --model_args pretrained=<ckpt> --tasks hellaswag
 
-集群用法(验收时): 同自带入口, ckpt 换 $SCRATCH 路径, batch_size 可开 4-8。
+集群用法:ckpt 换 $SCRATCH 路径,batch_size 可开 4-8;MC 指标用
+scripts/mc_eval.py(见 slurm/bltz_mc_eval.sbatch)。
 """
+
 from __future__ import annotations
 
 import argparse
@@ -79,7 +55,7 @@ import torch
 import torch.nn.functional as F
 
 from bltz.config import Cfg
-from bltz.models.autoencoder import EOS_ID, ByteStringAE
+from bltz.models.autoencoder import ByteStringAE
 from bltz.models.model_v2 import BltzLMv2
 from bltz.segment_v2 import segment_word
 from bltz.verify import VerifyResplitter
@@ -92,7 +68,6 @@ DEV = "cuda"
 CHAT_USER = "<|user|>"
 CHAT_ASSISTANT = "<|assistant|>"
 CHAT_END = "<|end|>"
-LOG2E = 1.4426950408889634
 
 
 @register_model("bltz")
@@ -110,7 +85,6 @@ class BltzEvalLM(LM):
         chat_template: bool = False,
         max_gen_units: int = 256,
         max_length: int = 0,          # 0 -> 取 ckpt 的 data.n_patches
-        score_mode: str = "unit_nll",  # "unit_nll" | "byte_marginal" | "pushforward_joint"
         heartbeat: int = 10,
         **kwargs,
     ):
@@ -120,6 +94,9 @@ class BltzEvalLM(LM):
         self.chat_template = bool(chat_template)
         self.max_gen_units = max(1, int(max_gen_units))
         self.heartbeat = max(1, int(heartbeat))
+        # 供 mc_eval.py 读取的逐请求元数据(docs/49 §5):n_units/n_chars/n_bytes。
+        self.collect_meta = False
+        self.last_meta: list[dict] = []
 
         ae_state = torch.load(ae, map_location="cpu", weights_only=False)
         self.ae = ByteStringAE(Cfg(ae_state["cfg"]))
@@ -131,9 +108,6 @@ class BltzEvalLM(LM):
         cfg_max = int(Cfg(st["cfg"]).data.n_patches)
         self.max_len = int(max_length) if max_length else cfg_max
         self.tok_dir = tok_dir
-        if score_mode not in ("unit_nll", "byte_marginal", "pushforward_joint"):
-            raise ValueError(f"unknown score_mode {score_mode!r}")
-        self.score_mode = score_mode
         self.verify = (
             VerifyResplitter(self.ae, tok_dir, ent_thresh=0.2, floor_bytes=3,
                              device=device, log_every=0)
@@ -156,6 +130,46 @@ class BltzEvalLM(LM):
         if self.verify is not None:
             units = self.verify.process(units)
         return [u[: self.l_max] for u in units]
+
+    # ---- ctx/cont 切分(docs/49 §3.2: joint unitize + 字节边界归属) ---------
+    def _split_units(self, context: str, continuation: str) -> tuple[list[bytes], list[bytes]]:
+        """把 (context, continuation) 切成 (ctx_units, cont_units),只对后者计分。
+
+        对齐标准 causal LM 的 `_encode_pair` 约定 (lm_eval/api/model.py):
+        - context 末尾空白先移到 continuation(保持词边界);
+        - 整段 ctx+cont 一起 unitize(训练同分布),按**字节边界**归属:
+          首字节 < boundary 的 unit 归 context(跨缝 unit 含分隔符空格 → context,
+          不计分);首字节 >= boundary 的 unit 才是候选词项。
+        - 兜底:若跨缝 unit 吞掉了候选(无分隔符等异常),退化到候选单独切词,
+          ctx 单独切词,然后拼接,并打印 warning。
+        """
+        ctx = context
+        trail = ctx[len(ctx.rstrip()):] if ctx else ""
+        if trail:
+            ctx = ctx[: len(ctx) - len(trail)]
+            cont = trail + continuation
+        else:
+            cont = continuation
+        full = self._segment(ctx + cont)
+        bnd = len(ctx.encode("utf-8"))
+        split = len(full)
+        acc = 0
+        for k, u in enumerate(full):
+            if acc >= bnd:
+                split = k
+                break
+            acc += len(u)
+        cont_units = full[split:]
+        expected = len(self._segment(cont.lstrip())) if cont.strip() else 0
+        if not cont_units or len(cont_units) != expected:
+            # 异常(候选被跨缝 unit 吞掉/切分数不一致): 兜底协议
+            print(f"[bltz-eval][warn] fallback separate unitize: ctx={ctx[-40:]!r} "
+                  f"cont={cont[-40:]!r} joint={len(cont_units)} expected={expected}",
+                  flush=True)
+            cont_units = self._segment(cont.lstrip()) if cont.strip() else []
+            full = self._segment(ctx) + cont_units
+            split = len(full) - len(cont_units)
+        return full[:split], full[split:]
 
     # ---- 核心: unit 链逐位 NLL (nats; 位置 i = p(u_i | u_<i), u_<0=BOS) ---
     @torch.no_grad()
@@ -181,134 +195,59 @@ class BltzEvalLM(LM):
                 return False
         return True
 
-    # ---- 字节边际 pushforward(μ-plug; 与 pushforward_bpb 的 marginal 同族) --
-    @torch.no_grad()
-    def _chain_byte_logmarg(self, units: list[bytes]) -> torch.Tensor:
-        """-> (S, l_max+1): 位置 i、Δ=d+1 处 P_byte(b|ctx,Δ) 的 log(π 加权、
-        对 μ_k 逐分量解码后取边际; 不含 EOS, pushforward v3 口径)。"""
-        bids, lens, pm = tensorize(units, self.l_max, self.dev)
-        h = self.model.backbone(
-            self.model.backbone_input(bids.unsqueeze(0), pm.unsqueeze(0)))
-        logit_pi, mu, _sig = self.model.head.params(h)   # (1,S,K),(1,S,K,D)
-        S = len(units)
-        pi = F.log_softmax(logit_pi[0].float(), -1)      # (S,K)
-        mu = mu[0].float()                               # (S,K,D)
-        K, D = mu.shape[1], mu.shape[2]
-        out = torch.full((S, self.l_max + 1), float("-inf"), device=self.dev)
-        for i in range(S):
-            L = min(len(units[i]), self.l_max)
-            if L == 0:
-                continue
-            # 该位置全部 K 分量 × Δ=1..L 的并行解码器查询(一次 FiLM 前向)
-            mu_q = mu[i].unsqueeze(1).expand(K, L, D).reshape(K * L, D)
-            d_idx = torch.arange(L, device=self.dev).repeat(K)  # Δ 下标=d+1
-            logp = F.log_softmax(self.ae.decoder(mu_q, d_idx), dim=-1)
-            marg = torch.logsumexp(pi[i][:, None, None]
-                                   + logp.view(K, L, 257), dim=0)  # (L,257)
-            tgt = torch.tensor(list(units[i][:L]), device=self.dev)
-            out[i, :L] = marg.gather(-1, tgt[:, None]).squeeze(-1)
-        return out
-
-    # ---- 字符串精确概率(层化 MC pushforward joint; 同一 λ 跨 Δ 共享) --------
-    PF_MC = 8  # 每分量 λ 样本数(pushforward_bpb 同值; 每位置 K×8=512 条)
-
-    @torch.no_grad()
-    def _chain_pf_joint(self, units: list[bytes]) -> torch.Tensor:
-        """-> (S,): 每位置 unit 的精确字符串 log P(u_i | ctx)(解码器
-        pushforward; bytes + EOS 终止; 层化 MC: 每分量 m 条 μ_k+σ_k·ε)。"""
-        M = self.PF_MC
-        bids, lens, pm = tensorize(units, self.l_max, self.dev)
-        h = self.model.backbone(
-            self.model.backbone_input(bids.unsqueeze(0), pm.unsqueeze(0)))
-        logit_pi, mu, sig = (t.float() for t in self.model.head.params(h))
-        S = len(units)
-        K, D = mu.shape[-2], mu.shape[-1]
-        pi = F.softmax(logit_pi[0], -1)                # (S,K)
-        mu, sig = mu[0], sig[0]                        # (S,K,D)
-        gen = torch.Generator(device=self.dev).manual_seed(20261018)
-        out = torch.zeros(S, dtype=torch.float64, device=self.dev)
-        for i in range(S):
-            L = min(len(units[i]), self.l_max)
-            if L == 0:
-                continue
-            eps = torch.randn(M, K, D, generator=gen, device=self.dev)
-            lam = mu[i].unsqueeze(0) + sig[i].unsqueeze(0) * eps   # (M,K,D)
-            lam_f = lam.reshape(M * K, D)
-            d_idx = torch.arange(L + 1, device=self.dev).repeat(M * K)
-            mu_q = lam_f.repeat_interleave(L + 1, dim=0)
-            logp = F.log_softmax(self.ae.decoder(mu_q, d_idx), dim=-1)
-            tgt = torch.tensor(list(units[i][:L]) + [EOS_ID], device=self.dev)
-            tgt = tgt.repeat(M * K)
-            lp = logp.gather(-1, tgt[:, None]).squeeze(-1).view(M * K, L + 1)
-            joint = lp.sum(-1).view(M, K).double()                 # (M,K)
-            # P = Σ_k π_k · mean_m exp(joint); log 域数值稳定化
-            jmax = joint.max(dim=0).values                          # (K,)
-            p_hat = (pi[i].double()
-                     * (joint - jmax.unsqueeze(0)).exp().mean(0)    # mean over M
-                     * jmax.exp()).sum()
-            out[i] = torch.log(p_hat.clamp_min(1e-300))
-        return out
-
     # ---- LM API ------------------------------------------------------------
+    @torch.no_grad()
+    def _ll_one(self, context: str, continuation: str) -> tuple[float, bool, dict]:
+        """单条 (ctx, cont) -> (S_raw nats, is_greedy, meta)。
+
+        docs/49 §2-§3: 只对候选词项求 Σ log p(λ(u_i) | 前文);归一化指标
+        (acc_unit/acc_char/PMI)在 scripts/mc_eval.py 计算,这里保持 LM API
+        的 raw 语义(harness 原生 acc 即 acc_raw,可交叉验证)。
+        """
+        ctx_units, cont_units = self._split_units(context, continuation)
+        # context 左截断 / continuation 右截断: 总长 <= max_len, 保住候选
+        keep = self.max_len - len(cont_units)
+        if keep < 0:
+            cont_units = cont_units[: self.max_len]
+            keep = 0
+        ctx_units = ctx_units[-keep:] if keep else []
+        units = ctx_units + cont_units
+        if not cont_units:
+            return float("-inf"), False, {"n_units": 0}
+        nll = self._chain_nll(units)
+        ll = -float(nll[len(ctx_units):].sum())   # 式(3): 只对候选项求和
+        greedy = self._greedy_hits(units, len(ctx_units))
+        return ll, greedy, {"n_units": len(cont_units)}
+
     def loglikelihood(self, requests) -> list[tuple[float, bool]]:
         out: list[tuple[float, bool]] = []
+        if self.collect_meta:
+            self.last_meta = []
         t0 = time.time()
         for i, req in enumerate(requests):
             context, continuation = req.args
             if self.chat_template:  # SFT 口径:只包 context,continuation 照旧
                 context = self._chat_prompt(context)
-            # 联合切词(与训练流同分布): context+continuation 拼成整段再
-            # segment_word,避免分别切词在接缝处造出 lone-space 等分布外 unit
-            # (实测: " Paris" 单切出 [' ','Paris'], 孤空格 unit NLL +64.8,
-            #  并污染后续; 联合切词得 ['France ', 'is ', 'Paris'] 正常水位)。
-            # 边界归属: 跨缝 unit(同时含 context/continuation 字节)归
-            # context 不计分——continuation 计分 unit = 首字节落在
-            # continuation 内的所有 unit(其 NLL 以完整 context 为条件)。
-            full_units = self._segment(context + continuation)
-            bnd = len(context.encode("utf-8"))
-            split = len(full_units)
-            acc = 0
-            for k, u in enumerate(full_units):
-                if acc >= bnd:
-                    split = k
-                    break
-                acc += len(u)
-            else:
-                split = len(full_units)
-            cont_units = full_units[split:]
-            if not cont_units:
-                # continuation 字节全被跨缝 unit 吸收(极短 continuation);
-                # 退化为计分最后一个 unit(否则零长答案, harness 不容)
-                split = max(0, len(full_units) - 1)
-                cont_units = full_units[split:]
-            ctx_units = full_units[:split]
-            # context 左截断: 总长 <= max_len, 保住 continuation
-            keep = self.max_len - len(cont_units)
-            if keep < 0:  # continuation 自身超长: 右截断其尾部(与 harness 截断
-                cont_units = cont_units[: self.max_len]  # 策略一致的方向)
-                keep = 0
-            ctx_units = ctx_units[-keep:] if keep else []
-            units = ctx_units + cont_units
-            if self.score_mode == "byte_marginal":
-                bm = self._chain_byte_logmarg(units)     # (S, l_max+1) log P
-                ll = 0.0
-                for i in range(len(ctx_units), len(units)):
-                    L = min(len(units[i]), self.l_max)
-                    ll += float(bm[i, :L].sum())
-            elif self.score_mode == "pushforward_joint":
-                pf = self._chain_pf_joint(units)         # (S,) log P(u|ctx)
-                ll = float(pf[len(ctx_units):].sum())
-            else:
-                nll = self._chain_nll(units)
-                ll = -float(nll[len(ctx_units):].sum())
-            greedy = self._greedy_hits(units, len(ctx_units))
+            ll, greedy, meta = self._ll_one(context, continuation)
             out.append((ll, greedy))
+            if self.collect_meta:
+                self.last_meta.append(meta)
             if (i + 1) % self.heartbeat == 0 or i + 1 == len(requests):
                 rate = (i + 1) / max(time.time() - t0, 1e-9)
                 eta = (len(requests) - i - 1) / rate / 60
                 print(f"[bltz-eval] loglikelihood {i+1}/{len(requests)} "
                       f"({rate:.2f} req/s, ETA {eta:.1f} min)", flush=True)
         return out
+
+    @torch.no_grad()
+    def unconditional_loglikelihood(self, units: list[bytes]) -> float:
+        """PMI 用的 S_uncond(docs/49 §4.3):同一候选 unit 序列在空 context
+        (仅 BOS)下的 Σ log p(λ(u_i) | u_<i)。"""
+        units = units[: self.max_len]
+        if not units:
+            return float("-inf")
+        nll = self._chain_nll(units)
+        return -float(nll.sum())
 
     def loglikelihood_rolling(self, requests) -> list[float]:
         out: list[float] = []
@@ -440,7 +379,6 @@ class BltzEvalLM(LM):
 def _selftest(args) -> None:
     lm = BltzEvalLM(pretrained=args.ckpt, ae=args.ae, tok_dir=args.tok,
                     device=args.device, verify=not args.noverify,
-                    score_mode=args.score_mode,
                     chat_template=args.chat_template,
                     max_gen_units=args.max_gen_units)
 
@@ -448,7 +386,8 @@ def _selftest(args) -> None:
         def __init__(self, *a):
             self.args = a
 
-    print("\n== selftest: loglikelihood ==", flush=True)
+    print("\n== selftest: loglikelihood(unit-space native) ==", flush=True)
+    lm.collect_meta = True
     pairs = [
         ("The capital of France is", " Paris"),
         ("The capital of France is", " London"),
@@ -458,17 +397,24 @@ def _selftest(args) -> None:
     ]
     for ctx, cont in pairs:
         ll, greedy = lm.loglikelihood([_Req(ctx, cont)])[0]
-        n_bytes = len(cont.encode("utf-8"))
-        print(f"  ctx={ctx!r:38s} cont={cont!r:12s} ll={ll:9.3f} nats | "
-              f"bpb={-ll * LOG2E / max(n_bytes, 1):.3f} | greedy={greedy}", flush=True)
+        n_units = lm.last_meta[-1]["n_units"]
+        n_chars = max(len(cont.lstrip()), 1)
+        print(f"  ctx={ctx!r:38s} cont={cont!r:12s} S_raw={ll:9.3f} nats | "
+              f"n_units={n_units} S_unit={ll/max(n_units,1):8.3f} | "
+              f"S_char={ll/n_chars:8.3f} | greedy={greedy}", flush=True)
 
     print("\n== selftest: loglikelihood_rolling ==", flush=True)
     text = "The quick brown fox jumps over the lazy dog. " * 30
     ll = lm.loglikelihood_rolling([_Req(text,)])[0]
-    # 注意: 返回的是 unit 级 GMM 密度 log-likelihood(latent nats, 可为正),
-    # 不是 byte CE; 项目的 bpb 口径在 pushforward_bpb.py(解码器推出蒙特卡洛)。
+    # 注意: 返回 unit 级 GMM 密度的 log-likelihood(latent nats, 可为正),
+    # 不是 byte CE/bpb; pushforward 字节 bpb 口径已于 2026-10-27 退役(docs/49)。
     print(f"  rolling ll={ll:.2f} nats | {-ll / len(text.encode()):.3f} "
-          f"latent-nats/byte(非 bpb)", flush=True)
+          f"latent-nats/byte(诊断,非 bpb)", flush=True)
+
+    print("\n== selftest: unconditional (PMI 用) ==", flush=True)
+    cu, vu = lm._split_units("The capital of France is", " Paris")
+    print(f"  cont units={vu} | S_uncond={lm.unconditional_loglikelihood(vu):.3f}",
+          flush=True)
 
     print("\n== selftest: generate_until ==", flush=True)
     g = lm.generate_until([_Req("The capital of France is",
@@ -480,7 +426,6 @@ def _selftest(args) -> None:
     print("\n== selftest: chat template ==", flush=True)
     lm_chat = BltzEvalLM(pretrained=args.ckpt, ae=args.ae, tok_dir=args.tok,
                          device=args.device, verify=not args.noverify,
-                         score_mode=args.score_mode,
                          chat_template=True, max_gen_units=24)
     prompt = "Give one short sentence about Paris."
     print(f"  wrapped prompt: {lm_chat._chat_prompt(prompt)!r}", flush=True)
@@ -509,8 +454,6 @@ def main() -> None:
     ap.add_argument("--max-gen-units", type=int, default=256,
                     help="generate_until 的 unit 数上限(默认 256;适配器逐 "
                          "unit 重算 context,O(n^2),大 max_gen_toks 必须截断)")
-    ap.add_argument("--score-mode", default="unit_nll",
-                    choices=["unit_nll", "byte_marginal", "pushforward_joint"])
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--tasks", default="hellaswag")
     ap.add_argument("--limit", type=int, default=32)
@@ -525,7 +468,7 @@ def main() -> None:
     from lm_eval import simple_evaluate
     lm = BltzEvalLM(pretrained=args.ckpt, ae=args.ae, tok_dir=args.tok,
                     device=args.device, verify=not args.noverify,
-                    temperature=args.temperature, score_mode=args.score_mode,
+                    temperature=args.temperature,
                     chat_template=args.chat_template,
                     max_gen_units=args.max_gen_units)
     t0 = time.time()

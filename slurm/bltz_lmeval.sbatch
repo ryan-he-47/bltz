@@ -1,6 +1,6 @@
 #!/bin/bash
 # bltz x lm-evaluation-harness battery (2026-10-26): CPT terminal ckpt vs p2
-# baseline, 8 tasks, 0-shot, score_mode=pushforward_joint, FULL split
+# baseline, 8 tasks, 0-shot, unit-space native scoring (raw acc cross-check), FULL split
 # (--limit 1000000; adapter default is 32 and MUST be overridden).
 # One ckpt per GPU, two in parallel on one node:
 #   GPU0: word_cpt_s_anneal/last.pt   (S-tier CPT terminal, step 96291)
@@ -63,14 +63,14 @@ echo "[job] p2  log: $P2_LOG"
 # --- two ckpts, one GPU each, in parallel ---------------------------------
 CUDA_VISIBLE_DEVICES=0 "$VENV/bin/python" -u scripts/lmeval_bltz.py \
   --ckpt "$CPT" --ae "$AE" --tok "$TOK" --device cuda \
-  --score-mode pushforward_joint --tasks "$TASKS" \
+  --tasks "$TASKS" \
   --num-fewshot 0 --limit 1000000 --batch-size 1 \
   > "$CPT_LOG" 2>&1 &
 PID0=$!
 
 CUDA_VISIBLE_DEVICES=1 "$VENV/bin/python" -u scripts/lmeval_bltz.py \
   --ckpt "$P2" --ae "$AE" --tok "$TOK" --device cuda \
-  --score-mode pushforward_joint --tasks "$TASKS" \
+  --tasks "$TASKS" \
   --num-fewshot 0 --limit 1000000 --batch-size 1 \
   > "$P2_LOG" 2>&1 &
 PID1=$!

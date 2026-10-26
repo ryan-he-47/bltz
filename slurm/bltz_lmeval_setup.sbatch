@@ -74,7 +74,7 @@ echo "[setup] warm-up: $TASKS (log: $WARM_LOG)"
 set +e
 "$VENV/bin/python" -u scripts/lmeval_bltz.py \
   --ckpt "$CKPT" --ae "$AE" --tok "$TOK" --device cpu \
-  --score-mode unit_nll --tasks "$TASKS" --num-fewshot 0 --limit 1 \
+  --tasks "$TASKS" --num-fewshot 0 --limit 1 \
   > "$WARM_LOG" 2>&1
 WRC=$?
 set -e
@@ -86,7 +86,7 @@ else
   for T in arc_easy arc_challenge hellaswag piqa winogrande openbookqa boolq commonsense_qa; do
     if "$VENV/bin/python" -u scripts/lmeval_bltz.py \
          --ckpt "$CKPT" --ae "$AE" --tok "$TOK" --device cpu \
-         --score-mode unit_nll --tasks "$T" --num-fewshot 0 --limit 1 \
+         --tasks "$T" --num-fewshot 0 --limit 1 \
          > "$SCRATCH/lmeval_warm_${T}.log" 2>&1; then
       echo "[setup] WARM OK   $T"
     else

@@ -1,20 +1,23 @@
 """Acceptance battery driver (docs/38 §1-§5) for a v2 word-arm ckpt.
 
-Reproduces the five-section battery used for the p1/p2 0.5B milestone
+Reproduces the four-section battery used for the p1/p2 0.5B milestone
 acceptance (checkpoints/word_05b_p{1,2}_accept.log) so the CPT S-tier
 acceptance log is directly comparable:
 
   1. diag_v2 backbone suite  : held-out NLL / top5 / 3-readout EM / pi stats / gen
   2. snap protocol-500k      : PPL/bpb vs temperature (forgetting monitor)
-  3. pushforward byteCE      : table-free byte marginal bpb
-  4. diag_v2_semantic        : NMI(h)/NMI(lambda) semantic structure
-  5. gen_accept              : extended generation 8 prompts x 6 readouts
+  3. diag_v2_semantic        : NMI(h)/NMI(lambda) semantic structure
+  4. gen_accept              : extended generation 8 prompts x 6 readouts
+
+2026-10-27(docs/49): §3 pushforward byteCE 已退役删除(pushforward 只作过与
+字节 LM 比较 bpb 的旁证尺,不是性能主口径);MC 评测改用
+scripts/mc_eval.py(unit-space 嵌入空间打分)。
 
 Eval set + protocol table are the OLD word cache (data/fineweb_word_local,
 188.6M units) — the exact p2 acceptance scale; the CPT model sees it only as
 a held-out forgetting probe (zero replay training).
 
-  python scripts/run_accept.py <v2_ckpt> <ae_ckpt> --tag cpt_s [--sections 1,2,3,4,5]
+  python scripts/run_accept.py <v2_ckpt> <ae_ckpt> --tag cpt_s [--sections 1,2,3,4]
 """
 from __future__ import annotations
 
@@ -39,10 +42,8 @@ def section_cmd(n: int, ckpt: str, ae: str, tag: str) -> list[str]:
                 "--units-pkl", PKL, "--cache", CACHE, "--topn", "500000",
                 "--ppl", "--no-qwen"]
     if n == 3:
-        return [PY, "-u", "scripts/pushforward_bpb.py", tag, ckpt, ae, "word"]
-    if n == 4:
         return [PY, "-u", "scripts/diag_v2_semantic.py", ckpt, ae, "--units-pkl", PKL]
-    if n == 5:
+    if n == 4:
         return [PY, "-u", "scripts/gen_accept.py", ckpt, ae,
                 "--steps", "48", "--topn", "500000",
                 "--table-cache", "checkpoints/protocol_table_500k.pt"]
@@ -52,9 +53,8 @@ def section_cmd(n: int, ckpt: str, ae: str, tag: str) -> list[str]:
 TITLES = {
     1: "backbone suite (diag_v2: NLL/top5/readout EM/pi/gen)",
     2: "snap protocol-500k PPL/bpb (old-dist forgetting monitor)",
-    3: "pushforward byteCE (table-free byte marginal bpb)",
-    4: "semantic structure (NMI h vs lambda)",
-    5: "extended generation (8 prompts x 6 readouts)",
+    3: "semantic structure (NMI h vs lambda)",
+    4: "extended generation (8 prompts x 6 readouts)",
 }
 
 
@@ -63,7 +63,7 @@ def main() -> None:
     ap.add_argument("ckpt")
     ap.add_argument("ae", nargs="?", default=AE_DEFAULT)
     ap.add_argument("--tag", default="cpt_s")
-    ap.add_argument("--sections", default="1,2,3,4,5")
+    ap.add_argument("--sections", default="1,2,3,4")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
     sections = [int(s) for s in args.sections.split(",") if s.strip()]

@@ -107,10 +107,12 @@ D11)。已验证事实:FiLM≈concat 同预算;H1(条件独立并行解码)判�
   盆地质量加权已废——与海拔/合法性反相关,corr −0.29)。
 
 **评估层**(scripts/):
-- `pushforward_bpb.py`(推前字节 CE,免表旁证尺):字节边际
-  P(b|ctx,Δ)=Σ_k π_k·mean_m P_dec(b|λ,Δ),纯字节无 EOS(v3);串级联合版
-  废弃(并行解码器整串联合=边际乘积沉底);CLI: `[tag] [v2] [ae] [mode]`。
-  评测流必须过训练同款核验+回退(铁律 1 评测侧)。
+- ~~`pushforward_bpb.py`(推前字节 CE,免表旁证尺)~~ **2026-10-27 退役**
+  (docs/49:pushforward 只是与字节 LM 比较 bpb 的旁证尺,不是性能主口径;
+  脚本已移入 `archive/pushforward_bpb.py`)。bpb 口径保留 **snap 协议表**。
+- `lmeval_bltz.py` + `mc_eval.py`:lm-eval 适配器(unit-space GMM 打分:
+  候选 unit 分数=−MDN NLL(λ(u)|h),与训练同函数)+ MC 指标驱动
+  (`acc_unit` 主指标 / acc_raw / acc_char / acc_unit_pmi;docs/49 §8)。
 - `snap_decode.py`:`--no-qwen`(word 臂表=纯 cache-top)+ `--cache`(全
   shard 扫频建协议表 top-500k+覆盖曲线)。
 - 生成铁律不变(UNSHIFTED 前缀);生成采样:mode(确定性)/modes-peak

@@ -16,14 +16,16 @@
    GMM mode**;分量均值当词已废除(dec 仅作诊断)。GMM 分量是密度基函数
    而非语义单元,合作叠峰时模式可不在任何 μ_k 上。
 3. **bpb 是跨模型/跨切分唯一硬通货**:NLL/PPL/EM 依赖 unit 尺(切分方案
-   改变即换尺),只有按字节归一的 bpb 可比。
+   改变即换尺),只有按字节归一的 bpb 可比。**2026-10-27 修正(docs/49)**:
+   bpb 只走 **snap 协议表(500k)** 口径;pushforward 免表字节 bpb(及其
+   lm-eval 打分)已退役——它只是与字节 LM 比较 bpb 的旁证尺,不是性能主口径。
 4. **自由生成质量以目检为准**:对单一参考续写的 EM 是有偏指标(好文本≠
    轨迹吻合),只用于退化/崩溃检测,不用于质量评分。
 5. **训练侧边界掩码**(2026-10-03 起,602642 生效):word 臂训练已启用
    文档分块注意力掩码+边界 loss 掩码(docs/39 #38;bltz/masking.py)。
    10-03 前的 run(含 word-1b/word-long)为**无掩码 regime**,对表读数
-   时注明口径。**评测工具侧(snap/pushforward)的掩码同口径尚未实施**
-   (后续项,docs/40)——该落地前,602642 的 snap/推前数字按"评测未
+   时注明口径。**评测工具侧(仅 snap)的掩码同口径尚未实施**
+   (后续项,docs/40)——该落地前,602642 的 snap 数字按"评测未
    掩码"口径解释。
 
 ## 1. 训练动力学(回答:这个 run 是否健康)
@@ -69,7 +71,8 @@
 ## 4. 读出/解码专项(回答:密度能不能变成词)
 
 工具:`snap_decode.py <v2> <ae> --units-pkl --ppl --gen [--mode]`;
-**`pushforward_bpb.py`(推前字节 bpb,2026-09-30 用户设计,免表旁证尺)**。
+**~~`pushforward_bpb.py`(推前字节 bpb)~~ 2026-10-27 退役**(docs/49:pushforward
+只是与字节 LM 比较 bpb 的旁证尺,不是性能主口径;脚本已归档 `archive/`)。
 表 = 协议表(§0 修正案:top-500k 缓存高频,BPE 臂并 Qwen 词表;覆盖报告必带)。
 
 | 项 | 量什么 / 判据 |
@@ -77,7 +80,6 @@
 | 四读出 EM | dec(诊断)/cos/gmm/**mode**;密度泛函应稳定压过分量读出(四连验证) |
 | 校准 PPL/bpb(snap) | **温度校准必做**;协议表 500k;选择税一次/单位(=token LM 语义) |
 | **表规格(2026-09-30 修正案,硬约束)** | snap-PPL/bpb 读数是表大小函数(粗表虚高:20.5k→2.19/120k→2.65/500k→2.77 收敛)。协议表=该臂缓存 top-500k 高频单位(BPE 风格臂另并 Qwen 词表),`--cache` 全 shard 扫频构建;报告必带表大小/覆盖率/OOV/校准 T;120k 仅冒烟档不作结论 |
-| **推前字节 bpb** | P(b\|ctx,Δ)=∫GMM·P_dec 字节边际;免表/免校准/免 OOV;**残余偏差:不收单位内前缀条件(并行解码器本性),利短单位臂**;串级联合版已废(并行解码器精确整串=边际乘积,沉底无判别力) |
 | coverage | 表外真值比例(协议表下 BPE≈1.0;word 500k≈0.994) |
 
 ## 5. 生成专项(回答:自由文本什么水平)
@@ -124,7 +126,31 @@
 | scripts/snap_decode.py <v2> <ae> --units-pkl --ppl --gen | snap/mode 四读出+校准 PPL+生成 |
 | scripts/diag_v2_semantic.py <v2> <ae> --units-pkl | 语义结构 |
 | scripts/probe_feedback.py <v2> <ae> --units-pkl | 反馈探针矩阵 |
+| scripts/lmeval_bltz.py --selftest / <v2> ... | lm-eval 适配器(unit-space 打分,见 §8) |
+| scripts/mc_eval.py <ckpt> --tag ... [--limit N] | 8 项 MC 电池:acc_unit/acc_raw/acc_char/PMI |
+| scripts/validate_mc_scoring.py <ckpt> | docs/49 验证闸门 G1–G6 |
 | scripts/plot_train.py <log> <png> | 训练曲线 |
 
 输出一律落 checkpoints/*.log;**诊断脚本必须带加载 canary**(打印 ckpt
 step + 权重范数,防随机骨干事故重演)。
+
+---
+
+## 8. 多选下游评测(unit-space MC,2026-10-27 拍板,详 docs/49)
+
+**口径**:骨干以 unit 为单位在嵌入空间给分布,打分直接在嵌入空间做:
+候选 unit 分数 = GMM 在该 unit 的冻结 AE 嵌入处的对数密度(与训练 MDN NLL
+同一函数)。`S_raw = Σ_{候选项} log p(λ(u_i)|前文)`;切词 = ctx+cont 整段
+`segment_word + VerifyResplitter`,跨缝 unit 归 context、分隔符不计项。
+
+| 指标 | 定义 | 角色 |
+|---|---|---|
+| `acc_unit` | `argmax S_raw / n_units` | **主指标**(项数归一;= token LM 的 token 数类比) |
+| `acc_raw` | `argmax S_raw` | 标准 `acc`(harness 原生 acc 与此逐位一致,G6) |
+| `acc_char` | `argmax S_raw / n_chars` | 对齐 lm-eval `acc_norm`(其实现按字符归一) |
+| `acc_unit_pmi` | `argmax (S_raw − S_uncond)/n_units` | 可选去偏(标准 `acc_mutual_info`) |
+
+工具:`scripts/mc_eval.py`(8 项 0-shot,`--limit 0` 全量;JSON+md 落盘)、
+`scripts/validate_mc_scoring.py`(G1–G6:held-out NLL 复现/确定性/边界单测/
+sanity 对/题内长度偏置/harness 集成)。**pushforward 系列打分与本文件旧 §4
+“推前字节 bpb”已退役(docs/49)。**

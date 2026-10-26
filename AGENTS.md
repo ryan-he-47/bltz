@@ -6,28 +6,48 @@
 (评估协议清单)。历史入口:`docs/28-phase-summary.md`(v1 总结)、
 `docs/01-design.md`(v1 设计)、`docs/08-runbook-stage1.md`(v1 起跑)。
 
-## 当前状态(2026-10-26,S 档 CPT 收官并验收;**下一步待拍板**;**2026-10-26 22:5x 用户指示暂停推进,已收尾:无在跑作业/无未提交改动——恢复时先读 docs/40 头条 + docs/48 §6 拍板清单**)
+## 当前状态(2026-10-27,pushforward 退役 + MC 打分改 unit-space 已实现、6/6 闸门通过;**待集群重测(需批准)**;**2026-10-26 22:5x 用户指示暂停推进,已收尾**——恢复时先读 docs/40 头条 + docs/48 §6 拍板清单)
 
-**入口:docs/39 #43 + docs/43 §4.1(CPT S 档完成与验收)+ docs/43(续训施工)
+**入口:docs/49(MC 打分 unit-space,现行口径)+ docs/39 #46(pushforward 退役+闸门)
++ docs/39 #43 + docs/43 §4.1(CPT S 档完成与验收)+ docs/43(续训施工)
 + docs/38(评估协议权威)+ docs/40(下步计划,含 M 档 vs SFT 决策点)
 + docs/41(0.5B 里程碑总结)+ docs/07(现行架构);历史辑 docs/37/35。**
+
+- **MC 下游评测口径重做(2026-10-27,用户拍板;docs/49 + docs/39 #46)**:
+  pushforward 系列打分**全部退役**(它只是与字节 LM 比较 bpb 的旁证尺,
+  不是性能主口径;`archive/pushforward_bpb.py`)。现行口径:骨干以 unit 为
+  单位在嵌入空间给 GMM 分布 → 候选 unit 分数 = **GMM 在该 unit 的冻结 AE
+  嵌入处的对数密度**(与训练 MDN NLL 同一函数);`S_raw=Σ_{候选项}log p`;
+  **主指标 `acc_unit = argmax S_raw/n_units`**(按 unit 数归一 = 标准 LM 的
+  token 数量类比),另报 `acc_raw`(标准 acc)/`acc_char`(对齐 lm-eval
+  acc_norm)/`acc_unit_pmi`(减空 context 去偏)。工具:`scripts/mc_eval.py`
+  (8 项 0-shot 电池)、`scripts/validate_mc_scoring.py`(G1–G6 闸门,本机
+  **6/6 PASS**:held-out NLL 复现 −40.942、确定性、边界/归一单测、sanity 8/10、
+  ARC-Easy 300 题 `acc_unit 31.0%` vs 最短基线 22.0%、harness 原生 acc 逐位
+  一致)。**旧 lm-eval 数字(32.63/32.54 等)已作废**(其 raw pushforward 总分
+  被候选字节长度支配:ARC-Easy r=−0.86、argmax=最短 47.5%)。
+  **下一步:集群双卡重跑 8 项(p2+CPT,`slurm/bltz_mc_eval.sbatch`),需用户批准。**
 
 - **CPT S 档完成 + 验收(2026-10-26,step 96292,docs/39 #43)**:
   三段墙(661426 72h + 674254 72h + 688841 ~14h)≈158h,新增 +50863 步
   =**+10.0B units**(60% DCLM + 40% FineWeb-Edu,零回放;分支 p2
   ckpt_pre_decay@45429,peak 2e-4,退火末段 91205→96292 混
-  web88/code5/math7 退到 lr≈0)。**验收(docs/38 五段 + lm-eval 0-shot
-  8 项,本机与集群双跑,先复现 p2 逐位一致)**:旧分布遗忘红线**未触发**
+  web88/code5/math7 退到 lr≈0)。**验收(docs/38 四段(2026-10-27 起;旧五段含
+  pushforward byteCE)+ lm-eval 旧口径 8 项,本机与集群双跑,先复现 p2 逐位一致)**:
+  旧分布遗忘红线**未触发**
   (snap-500k bpb **2.5376** vs p2 2.5390)、NLL **-40.942** vs -40.691
-  (+0.25)、top5 38.98%/EM 23.03%(p2 40.44/24.41)、byteCE 5.153 vs
-  4.891(退火锐化);语义 NMI(h) 0.269>λ 0.257;退火缓存分布 p2→终态
-  **-10.218 nats/EM +5.21pp**(代码/数学入模);lm-eval 0-shot 8 项均分
-  **32.63% vs p2 32.54%**(acc_norm -0.97pp,随机线附近,无增益)。
+  (+0.25)、top5 38.98%/EM 23.03%(p2 40.44/24.41)、~~byteCE 5.153 vs
+  4.891(退火锐化;该指标已退役)~~;语义 NMI(h) 0.269>λ 0.257;退火缓存分布 p2→终态
+  **-10.218 nats/EM +5.21pp**(代码/数学入模);~~lm-eval 0-shot 8 项均分
+  **32.63% vs p2 32.54%**(acc_norm -0.97pp,随机线附近,无增益)~~**——旧
+  pushforward 口径已废(docs/49:raw 总分被字节长度支配,ARC-Easy r=−0.86),
+  unit-space 口径全量重测待集群批准(本机 ARC-Easy 300 题 acc_unit 31.0%
+  vs 最短基线 22.0%,有可测信号)。**
   **关键口径:新分布
   -3.85 nats 的增益中通用能力仅 ≈-0.25(EM 为负)→ CPT 买的是域适配,
-  0.5B 能力深度问题未解**(与 docs/39 #35 同构;lm-eval 亦无下游信号)。
+  0.5B 能力深度问题未解**(与 docs/39 #35 同构;下游多选能力待新口径重测)。
 - **上一个里程碑(2026-10-09,docs/41)**:0.5B Chinchilla word 臂 10B
-  units——snap-500k bpb **2.539**、NLL **-40.69**、byteCE 4.89、
+  units——snap-500k bpb **2.539**、NLL **-40.69**、~~byteCE 4.89(已退役)~~、
   top5 40.4%、mode EM 26.3%、NMI(h) 0.271 > λ 0.257。
 - **下一阶段(用户 10-09 拍板;S 档已验收)→ 当前决策点**:
   **SFT** 先纯通用 smol-smoltalk 全量(`$SCRATCH/data/sft/` 已就绪,
@@ -77,7 +97,7 @@
   (ShardRotator,`data.rotate_shards: {resident:4, every:2000}`)——
   驻留 4 shard+后台预载换下一块,mem 96G→~48G;数据序从 iid 变
   粗粒度块随机,跨 run 对比曲线细纹理时注意;当前 run 保持 preload。
-- 测试 18 个全绿(含 test_boundary);HF token 在 $SCRATCH/hf_cache/token(600,工作区禁存)。
+- 测试 19 个全绿(含 test_boundary + test_mc_scoring);HF token 在 $SCRATCH/hf_cache/token(600,工作区禁存)。
 
 ## 历史状态快照(2026-09-24 及以前,存档)
 
