@@ -6,27 +6,33 @@
 (评估协议清单)。历史入口:`docs/28-phase-summary.md`(v1 总结)、
 `docs/01-design.md`(v1 设计)、`docs/08-runbook-stage1.md`(v1 起跑)。
 
-## 当前状态(2026-10-09,0.5B Chinchilla 里程碑收官;详见 docs/41)
+## 当前状态(2026-10-26,S 档 CPT 收官并验收;**下一步待拍板**)
 
-**入口:docs/41(v2 阶段总结·第三辑/0.5B 里程碑,压缩上下文入口)+
-docs/43(续训施工方案,10-18 拍板)+ docs/38(评估协议权威)+
-docs/39(实验日志索引)+ docs/40(下步计划)+ docs/07(现行架构);
-历史辑 docs/37/35。**
+**入口:docs/39 #43 + docs/43 §4.1(CPT S 档完成与验收)+ docs/43(续训施工)
++ docs/38(评估协议权威)+ docs/40(下步计划,含 M 档 vs SFT 决策点)
++ docs/41(0.5B 里程碑总结)+ docs/07(现行架构);历史辑 docs/37/35。**
 
-- **0.5B Chinchilla 里程碑收官(2026-10-09,docs/41)**:word 臂两段式
-  10B units——snap-500k bpb **2.539**(word-long 2.747)、NLL **-40.69**、
-  byteCE 4.89、top5 40.4%、mode EM 26.3%、NMI(h) 0.271 > λ 0.257;
-  曲线终点仍下探;数据:缓存 9.178B units(14 shards),累计 ~1.57 遍,
-  余量≈0。
-- **下一阶段(用户拍板 10-09;配方 10-18 拍板,docs/43 §0)**:
-  ①**10B 量级新数据续训**——S 档 +10B units;分支点 p2 ckpt_pre_decay
-  (step 45429,weight-only+rewarmup 500);peak 2e-4 平台延续(用户口径:
-  稳定段末尾续跑;⚠️超 CPT 文献 10-50% 区间,遗忘监控=旧分布 snap bpb
-  差分);60% DCLM-baseline + 40% FineWeb-Edu(强制 id 去重已见
-  sample-10BT);零回放;退火末 10% 步混数学/代码(前置:AE 对数学/代码
-  重建质量验证);数据由我直接在集群下载(scripts/download_cpt_data.py,
-  tiny 分区)→ ②**SFT**:先纯通用 smol-smoltalk 全量,benchmark 验秤看
-  字节能力是否涌现,不行再议字节特化;lm-eval-harness 续训窗口内并行接入。
+- **CPT S 档完成 + 验收(2026-10-26,step 96292,docs/39 #43)**:
+  三段墙(661426 72h + 674254 72h + 688841 ~14h)≈158h,新增 +50863 步
+  =**+10.0B units**(60% DCLM + 40% FineWeb-Edu,零回放;分支 p2
+  ckpt_pre_decay@45429,peak 2e-4,退火末段 91205→96292 混
+  web88/code5/math7 退到 lr≈0)。**验收(docs/38 五段 + lm-eval 0-shot
+  8 项,本机与集群双跑,先复现 p2 逐位一致)**:旧分布遗忘红线**未触发**
+  (snap-500k bpb **2.5376** vs p2 2.5390)、NLL **-40.942** vs -40.691
+  (+0.25)、top5 38.98%/EM 23.03%(p2 40.44/24.41)、byteCE 5.153 vs
+  4.891(退火锐化);语义 NMI(h) 0.269>λ 0.257;退火缓存分布 p2→终态
+  **-10.218 nats/EM +5.21pp**(代码/数学入模);lm-eval 0-shot 8 项均分
+  **32.63% vs p2 32.54%**(acc_norm -0.97pp,随机线附近,无增益)。
+  **关键口径:新分布
+  -3.85 nats 的增益中通用能力仅 ≈-0.25(EM 为负)→ CPT 买的是域适配,
+  0.5B 能力深度问题未解**(与 docs/39 #35 同构;lm-eval 亦无下游信号)。
+- **上一个里程碑(2026-10-09,docs/41)**:0.5B Chinchilla word 臂 10B
+  units——snap-500k bpb **2.539**、NLL **-40.69**、byteCE 4.89、
+  top5 40.4%、mode EM 26.3%、NMI(h) 0.271 > λ 0.257。
+- **下一阶段(用户 10-09 拍板;S 档已验收)→ 当前决策点**:
+  **SFT** 先纯通用 smol-smoltalk 全量(`$SCRATCH/data/sft/` 已就绪),
+  benchmark 验秤看字节能力是否涌现;与 **M 档继续加数据**二选一,推荐
+  SFT 先行(理由与选项见 docs/40"下一个决策点")。**待用户拍板。**
 
 - **三废除(09-29 拍板)**:非确定性切词(纯 BPE bpb -15% 实证)、
   非线性 GMM 头(深度阶梯单调反证,mdn_depth=0 默认)、分量-词对应
