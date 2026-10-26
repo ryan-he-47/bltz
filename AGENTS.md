@@ -6,7 +6,7 @@
 (评估协议清单)。历史入口:`docs/28-phase-summary.md`(v1 总结)、
 `docs/01-design.md`(v1 设计)、`docs/08-runbook-stage1.md`(v1 起跑)。
 
-## 当前状态(2026-10-27,pushforward 退役 + MC 打分改 unit-space 已实现、6/6 闸门通过;**待集群重测(需批准)**;**2026-10-26 22:5x 用户指示暂停推进,已收尾**——恢复时先读 docs/40 头条 + docs/48 §6 拍板清单)
+## 当前状态(2026-10-27,pushforward 退役 + MC unit-space 已实现;CPT 病因实验 **edu5b 已拍板并启动**——冒烟 693584 排队中;入口读 docs/50 + docs/49 + docs/39 #46)
 
 **入口:docs/49(MC 打分 unit-space,现行口径)+ docs/39 #46(pushforward 退役+闸门)
 + docs/39 #43 + docs/43 §4.1(CPT S 档完成与验收)+ docs/43(续训施工)
@@ -26,17 +26,21 @@
   ARC-Easy 300 题 `acc_unit 31.0%` vs 最短基线 22.0%、harness 原生 acc 逐位
   一致)。**旧 lm-eval 数字(32.63/32.54 等)已作废**(其 raw pushforward 总分
   被候选字节长度支配:ARC-Easy r=−0.86、argmax=最短 47.5%)。
-  **下一步:集群双卡重跑 8 项(p2+CPT,`slurm/bltz_mc_eval.sbatch`),需用户批准。**
-- **下一实验计划(2026-10-27,待拍板)**:用户判定 S 档续训不达预期,转向**病因
-  定位**——从 p2 稳定段末尾 `ckpt_pre_decay@45429` 分支,**只用 FineWeb-Edu**
-  (CPT 新增 edu 缓存 5.349B units,路径 `$SCRATCH/data/cpt_cache_edu`)续训
-  **+5B units(+25432 步,终点 70861,末 2543 步退火到 0)**,不扩数据、不混
-  DCLM、不做代码/数学退火;同期用 CPT `s0070000`(+24.6k 步混合数据)作同算力
-  对照,区分 H1(数据切换/混合动力学)vs H2(0.5B 能力上限)。**施工计划 =
-  `docs/50-edu5b-continuation-plan.md`**;sbatch 已备
-  (`slurm/bltz_word_edu5b{,_smoke}.sbatch`、`slurm/bltz_edu5b_{pre,post}_eval.sbatch`,
-  **均未提交**)。**待用户拍板 docs/50 §8 六项**(LR 尾/prune --apply/同算力对照/
-  事实 cloze 探针/分支点确认/评估预算)后执行;新实验需先 prune 102.7GB。
+  **下一步:训练后按 docs/50 §5.3 用 `slurm/bltz_edu5b_eval.sbatch` 统一评三个
+  ckpt(p2pre / CPT s0070000 / edu5b),H1/H2 判据见 docs/50 §5.2。**
+- **当前实验:FineWeb-Edu 单语料 5B 续训(edu5b,2026-10-27 已拍板并启动)**:
+  用户判定 S 档续训不达预期,转向**病因定位**——从 p2 稳定段末尾
+  `ckpt_pre_decay@45429` 分支,**只用 FineWeb-Edu**(CPT 新增 edu 缓存
+  5,348,918,922 units / 7 shards,`$SCRATCH/data/cpt_cache_edu`)续训
+  **+5.000B units = +25,432 步(终点 70,861,末 2,543 步 WSD 退到 0)**,
+  不扩数据、不混 DCLM、不做代码/数学退火;同算力对照 = CPT `s0070000`
+  (+24,571 步混合数据),区分 H1(数据切换/混合动力学)vs H2(0.5B 能力上限)。
+  **施工/拍板/判据 = `docs/50-edu5b-continuation-plan.md`**(§8 六项已拍板:
+  WSD 尾退 0 / 不执行 prune(238GiB+~30GiB < 300GB)/ 纳入 s0070000 /
+  不加事实 cloze 探针 / 分支点 45429 / 评估预算延后到训后)。
+  作业:`slurm/bltz_word_edu5b.sbatch`(正式,+wall 自续投)、`..._smoke.sbatch`
+  (冒烟)、`slurm/bltz_edu5b_eval.sbatch`(训后三 ckpt 统一评估)。
+  状态:冒烟 **693584** 已提交(2026-10-27 03:5x,排队中);通过后提交正式。
 
 - **CPT S 档完成 + 验收(2026-10-26,step 96292,docs/39 #43)**:
   三段墙(661426 72h + 674254 72h + 688841 ~14h)≈158h,新增 +50863 步
