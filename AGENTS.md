@@ -6,7 +6,7 @@
 (评估协议清单)。历史入口:`docs/28-phase-summary.md`(v1 总结)、
 `docs/01-design.md`(v1 设计)、`docs/08-runbook-stage1.md`(v1 起跑)。
 
-## 当前状态(2026-10-27,pushforward 退役 + MC unit-space 已实现;CPT 病因实验 **edu5b 已拍板并启动**——冒烟 693584 排队中;入口读 docs/50 + docs/49 + docs/39 #46)
+## 当前状态(2026-10-27,pushforward 退役 + MC unit-space 已实现;CPT 病因实验 **edu5b 已发射**——冒烟 693723 通过,正式训练 **693756** 排队中;入口读 docs/50 + docs/49 + docs/39 #47)
 
 **入口:docs/49(MC 打分 unit-space,现行口径)+ docs/39 #46(pushforward 退役+闸门)
 + docs/39 #43 + docs/43 §4.1(CPT S 档完成与验收)+ docs/43(续训施工)
@@ -40,7 +40,13 @@
   不加事实 cloze 探针 / 分支点 45429 / 评估预算延后到训后)。
   作业:`slurm/bltz_word_edu5b.sbatch`(正式,+wall 自续投)、`..._smoke.sbatch`
   (冒烟)、`slurm/bltz_edu5b_eval.sbatch`(训后三 ckpt 统一评估)。
-  状态:冒烟 **693584** 已提交(2026-10-27 03:5x,排队中);通过后提交正式。
+  状态(2026-10-27 04:55):**冒烟 693723 通过**(45430–45478 共 49 步,0 skip、
+  无 NaN,~11.5 s/步;首个日志步基准 step 45450 loss = **−41.1368**);**正式训练
+  693756 已提交 gpu_v100s(排队)**;首投冒烟 693674 曾因 **stingy 节点
+  gpu-v100s-01 的 GPU 瞬时故障**在起步 3 步内持续 NaN,已定位(数据流确定、
+  同命令行逐位复现首步 loss、换跑通过)→ **见 docs/50 §7.1 + docs/39 #47:
+  起步即 NaN 先换节点重投,勿改模型/数据**。一次性冒烟/探针 ckpt 已清理(55GB),
+  scratch 回到 ~238GiB。
 
 - **CPT S 档完成 + 验收(2026-10-26,step 96292,docs/39 #43)**:
   三段墙(661426 72h + 674254 72h + 688841 ~14h)≈158h,新增 +50863 步
