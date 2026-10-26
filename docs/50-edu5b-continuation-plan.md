@@ -113,7 +113,7 @@
 
 ## 3. 训练脚本
 
-已生成(未提交作业,待拍板):
+已提交(2026-10-27;冒烟结果见 §3.1,六项拍板见 §8):
 
 - `slurm/bltz_word_edu5b.sbatch` —— 正式训练(单 phase + wall 自续投)
 - `slurm/bltz_word_edu5b_smoke.sbatch` —— 50 步冒烟(独立 ckpt 目录)
@@ -140,6 +140,7 @@
 
 ---
 
+## 4. 训练期监控(稀疏,不上登录节点跑任务)
 
 - 判 run 活性**只看 `train.log` 步号**(不看 squeue/sacct)。
 - 建议检查点:起飞后 30min、每 6–12h 一次(用 `ssh ... tail -n 20 train.log`);
