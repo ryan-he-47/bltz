@@ -6,7 +6,7 @@
 (评估协议清单)。历史入口:`docs/28-phase-summary.md`(v1 总结)、
 `docs/01-design.md`(v1 设计)、`docs/08-runbook-stage1.md`(v1 起跑)。
 
-## 当前状态(2026-10-27,pushforward 退役 + MC unit-space 已实现;CPT 病因实验 **edu5b 正式训练 693756 运行中**——2026-10-27 07:58 起跑 gpu-v100s-07,19:25 已到 step 49,100(14.4%),健康;入口读 docs/50 + docs/49 + docs/39 #47)
+## 当前状态(2026-10-30,**edu5b 5B 单语料续训完成 + 训后评估完成 → 预注册判定 H2 支持**:分布拟合/读出锐化明显、MC 能力几乎不变;0.5B 能力深度问题未解;入口读 docs/50(§5.4 结果)+ docs/49 + docs/39 #48)
 
 **入口:docs/49(MC 打分 unit-space,现行口径)+ docs/39 #46(pushforward 退役+闸门)
 + docs/39 #43 + docs/43 §4.1(CPT S 档完成与验收)+ docs/43(续训施工)
@@ -26,8 +26,8 @@
   ARC-Easy 300 题 `acc_unit 31.0%` vs 最短基线 22.0%、harness 原生 acc 逐位
   一致)。**旧 lm-eval 数字(32.63/32.54 等)已作废**(其 raw pushforward 总分
   被候选字节长度支配:ARC-Easy r=−0.86、argmax=最短 47.5%)。
-  **下一步:训练后按 docs/50 §5.3 用 `slurm/bltz_edu5b_eval.sbatch` 统一评三个
-  ckpt(p2pre / CPT s0070000 / edu5b),H1/H2 判据见 docs/50 §5.2。**
+  **下一步:edu5b 已按 docs/50 §5.4 完成三 ckpt 评估并判 H2;当前决策点 = SFT
+  (docs/48,待拍板)vs M 档加数据(docs/40)。**
 - **当前实验:FineWeb-Edu 单语料 5B 续训(edu5b,2026-10-27 已拍板并启动)**:
   用户判定 S 档续训不达预期,转向**病因定位**——从 p2 稳定段末尾
   `ckpt_pre_decay@45429` 分支,**只用 FineWeb-Edu**(CPT 新增 edu 缓存
@@ -40,14 +40,25 @@
   不加事实 cloze 探针 / 分支点 45429 / 评估预算延后到训后)。
   作业:`slurm/bltz_word_edu5b.sbatch`(正式,+wall 自续投)、`..._smoke.sbatch`
   (冒烟)、`slurm/bltz_edu5b_eval.sbatch`(训后三 ckpt 统一评估)。
-  状态(2026-10-27 19:25):**冒烟 693723 通过**;**正式训练 693756 运行中**
-  (07:58 起跑 gpu-v100s-07;step 49,100 = 新增 14.4%,11.15 s/步,4 次 spike_skip
-  全为 Inf 单发、0 NaN;首日志步 45450 loss −41.1321 vs 冒烟 −41.1368,差 0.005<0.01 ✓;
-  预计 10-30 07:58 撞 3 天墙 → auto-resubmit 第二段 ~2,300 步)。首投冒烟 693674 曾因
-  **stingy 节点 gpu-v100s-01 的 GPU 瞬时故障**在起步 3 步内持续 NaN,已定位(数据流确定、
-  同命令行逐位复现首步 loss、换跑通过)→ **见 docs/50 §7.1 + docs/39 #47:
-  起步即 NaN 先换节点重投,勿改模型/数据**。一次性冒烟/探针 ckpt 已清理(55GB),
-  scratch 回到 ~238GiB;训后评估按 docs/50 §5.3 用 `slurm/bltz_edu5b_eval.sbatch`。
+  状态(2026-10-30 **完成**):训练 693756(10-27 07:58)→ wall 前优雅停 → 自动续投
+  **708372** → **10-30 15:19 完成 step 70,861**(+25,432 步=5.000B units,lr→0);
+  37 次 skip(1.45‰,36 Inf + 1 NaN 单发、无级联);Edu loss 桶均值 −39.4→−42.6
+  (66–68k)→ 退火 −44.4 → 终点 −46.36。**训后评估完成并判 H2**:GPU 紧张拆两个单卡
+  作业(710829 MC / 710830 accept;旧词协议资产 1.27GB+209MB 从本机上传)。**MC 7 项
+  有效均值 p2pre 29.05% / cpts7 28.91% / edu5b 29.48%**;配对同题逐项(n=20,419)
+  **Δ_edu=+0.56pp(95%CI +0.08~+1.04)、Δ_CPT=+0.06pp(−0.42~+0.55)** → **预注册
+  判据 H2 支持**(Δ_edu ≤ +1pp 且 Δ_CPT ≤ +1pp)。内部协议:edu5b 旧分布
+  **NLL −42.543**(分支 −38.895)、top5 41.70%、EM 25.33%、snap-500k bpb **2.4792**
+  (p2 final 2.5390 → 遗忘红线安全)、NMI 0.272;edu 域内 NLL −45.395(−4.87)。
+  结论 = **5B 单语料续训买到显著的分布拟合/读出锐化,但 MC 能力仅 +0.5pp(实务可忽略);
+  同算力混合对照同样无能力增量 → 0.5B 能力深度问题不因换数据配方而解**(同 #35/#43)。
+  **待办/教训**:① 起步 2–3 步全 NaN 先换节点重投(§7.1/#47);② `mc_eval` 的
+  winogrande gold 解析 bug(该任务是"choice 作 context+共享续写"格式,三模型恒 0%,
+  已剔除、Δ 不受影响;修法 docs/50 §5.4(g));③ 集群 conda 缺 matplotlib →
+  run_accept section 3 画图崩、**section 4 生成未跑(E2 待补)**。
+  产物:`$SCRATCH/mc_eval/mc_eval_{p2pre,cpts7,edu5b}.{json,md}`、
+  `checkpoints/word_{p2pre,cpts7,edu5b}_accept.log`、`scripts/report_edu5b.py`;
+  完整结果/表格 = docs/50 §5.4 + docs/39 #48。
 
 - **CPT S 档完成 + 验收(2026-10-26,step 96292,docs/39 #43)**:
   三段墙(661426 72h + 674254 72h + 688841 ~14h)≈158h,新增 +50863 步

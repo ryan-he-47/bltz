@@ -224,6 +224,73 @@
 > 说明:用户已取消 CPT vs p2 的**验收重测**;本计划中的 MC 基线/对照仅服务于本
 > 实验的 H1/H2 判别(分支基线 + 同算力对照),不重开 CPT 验收结论。
 
+### 5.4 评估结果(2026-10-30,已完成)
+
+**执行**:MC 8 项 = `slurm/bltz_edu5b_eval_mc.sbatch`(job 710829,单卡,三 ckpt 顺序,
+~64min/个;全量 items);内部四段 = `slurm/bltz_edu5b_eval_accept.sbatch`(job 710830,
+~7min/个);旧词协议资产 2026-10-30 从本机上传(1.27GB `fineweb_word_local` +
+209MB `protocol_table_500k.pt`)。判据/汇总脚本 = `scripts/report_edu5b.py`。
+产物:`$SCRATCH/mc_eval/mc_eval_{p2pre,cpts7,edu5b}.{json,md}`(已 pull 到本机
+`checkpoints/`)、`checkpoints/word_{p2pre,cpts7,edu5b}_accept.log`。
+
+**(a) MC 主指标 `acc_unit`(docs/49;逐任务 + 三个 Δ)**
+
+| task | n | p2pre | cpts7 | edu5b | Δedu−p2 | Δcpt−p2 |
+|---|---|---|---|---|---|---|
+| arc_easy | 2376 | 27.86% | 27.19% | 27.95% | +0.08 | −0.67 |
+| arc_challenge | 1172 | 22.44% | 23.04% | 23.29% | +0.85 | +0.60 |
+| hellaswag | 10042 | 24.64% | 24.82% | 25.32% | +0.69 | +0.18 |
+| piqa | 1838 | 51.09% | 52.18% | 52.12% | +1.03 | +1.09 |
+| openbookqa | 500 | 24.60% | 23.00% | 24.00% | −0.60 | −1.60 |
+| boolq | 3270 | 62.17% | 62.17% | 62.14% | −0.03 | +0.00 |
+| commonsense_qa | 1221 | 19.57% | 18.92% | 21.05% | +1.47 | −0.66 |
+| winogrande | 1267 | — | — | — | *invalid(见 g)* | — |
+
+- 7 项有效均值:`acc_unit` p2pre **29.05%** / cpts7 **28.91%** / edu5b **29.48%**;
+  含 winogrande(三模型恒 0)的 8 项均值 29.05 / 28.91 / 29.48 → Δ 与 7 项相同。
+- **配对分析(同题逐项,McNemar 式,n=20,419)**:edu5b−p2pre = **+0.56pp,
+  95%CI [+0.08, +1.04]**;cpts7−p2pre = **+0.06pp,95%CI [−0.42, +0.55]**。
+  即:edu 续训有一个**统计可测但实务可忽略**的 +0.5pp;同算力混合对照 ≈0。
+
+**(b) 内部协议(旧分布,同 p2 验收协议)**
+
+| 指标 | p2pre | cpts7 | edu5b |
+|---|---|---|---|
+| held-out NLL(旧分布) | −38.895 | −40.060 | **−42.543** |
+| top5 覆盖 | 38.65% | 38.66% | **41.70%** |
+| argmax_pi EM | 22.87% | 22.64% | **25.33%** |
+| snap-500k T=10 bpb | 2.5866 | 2.5646 | **2.4792** |
+| NMI(h) | 0.258 | 0.263 | **0.272** |
+
+**(c) 遗忘红线**:edu5b snap bpb **2.4792** ≤ p2 final 2.5390(Δ−0.060)、≤ 分支
+2.5866(Δ−0.107)→ **红线未触发(反而更好)**。
+
+**(d) edu 域内 NLL**:edu5b **−45.395** vs p2pre −40.526 vs cpts7 −41.899
+(域内拟合改善 −4.87 nats;只证明"拟合",不作能力判据)。
+
+**(e) 里程碑旧分布 NLL 曲线**:50k −41.02 → 55k −41.74 → 60k −42.38 → 65k −42.92
+→ 70k −44.47(单调改善;该 pkl ≠ 协议 pkl,只作轨迹)。
+
+**(f) 预注册判定(docs/50 §5.2)→ H2 支持**
+Δ_edu = +0.50~+0.56pp ≤ +1.0pp,Δ_CPT ≈ 0 ≤ +1.0pp,Δ_edu−Δ_CPT = +0.50~+0.65pp
+< H1 要求的 +1.0pp。**结论:0.5B 尺度上,单一高质量语料(FineWeb-Edu)5B 续训
+只买到分布拟合/读出锐化(NLL −3.65 nats、snap bpb −0.107、EM +2.5pp、NMI +0.014),
+几乎不转化为多选能力(+0.5pp,实务可忽略);同算力对照 CPT s0070000 同样无能力增量
+(Δ_CPT≈0)。→ 支持 H2(能力上限),不支持 H1(数据切换/混合动力学吃掉增益)。**
+与 docs/39 #35(120M 能力墙)、#43(CPT 买的是域适配)同构;0.5B/20B-units 之后的
+能力深度问题未解,决策点仍是 SFT vs M 档加数据(见 docs/40)。
+
+**(g) 已知问题与待办**
+1. **winogrande invalid**:lm-eval 0.4.13 该任务是"choice 作 context + 共享
+   continuation"格式,gold 下标在 `doc_to_text`(0/1)、`doc_to_target` 返回续写文本,
+   `mc_eval._gold_index` 取不到下标 → 三个模型恒 0%。已从均值剔除(Δ 不受影响)。
+   修法:gold 回退取 `int(task.doc_to_text(doc))` 并修正 char 归一;或换任务。
+2. **内部四段 section 3 崩溃**:集群 conda env 无 `matplotlib`,diag_v2_semantic 在
+   画图处 `ModuleNotFoundError`(NMI 数值已算并打印),run_accept 因此停在 section 3,
+   **section 4 扩展生成未跑(E2 生成对比未做)**;需要时装 matplotlib 或加无绘图开关后补跑。
+3. boolq 三模型均≈多数类基线(62.17%),对能力无判别力;hellaswag/arc_challenge/
+   csqa 均在随机线附近——绝对水平上模型仍无可用多选能力,与 #43 判断一致。
+
 ---
 
 ## 6. 预期与判读
