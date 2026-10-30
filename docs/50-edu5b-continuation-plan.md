@@ -270,6 +270,16 @@ p2 分支 2.5866(差 −0.107)。
   之后无改动。
 - 差异来源 = **评测子集(前 300 题 vs 全量 2376 题)与 ckpt 不同**,不是代码/口径变化。
 
+**(h) 生成样例(2026-10-31,本机 RTX 4060 完成;未用集群)**
+
+- 模型:作用点 baseline = `checkpoints/word_05b_p2_last.pt`(p2 终点 step 50863,本机现成);
+  edu5b 终点 = `checkpoints/word_edu5b_last.pt`(从集群拉取 1.9GB,step 70861)。
+- 协议:`scripts/gen_accept.py`(docs/38 §5),8 prompt × 6 读出 × 48 units,同脚本同种子;
+  读出全为密度泛函(mode / modes-peak T=0.6,1.0 / snap argmax / snap t=0.8,1.0)。
+  prompt 0–3 = 评测序列前 16 units;prompt 4–7 = 经典开头句。
+- 产物:`checkpoints/word_edu5b_gen_samples.md`(并排全文,由 `scripts/gen_compare.py` 生成)、
+  原始日志 `checkpoints/gen_edu5b/{p2_last,edu5b}.log`。
+
 ---
 
 ## 6. 测量口径
