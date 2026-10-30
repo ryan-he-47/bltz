@@ -21,13 +21,23 @@ import re
 import sys
 from pathlib import Path
 
+try:  # Windows 控制台默认 GBK,报告含 Δ/± 等字符会炸
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 TAGS = ["p2pre", "cpts7", "edu5b"]
 P2_SNAP_BPB = 2.5390          # p2 acceptance log, protocol T=10, docs/39 #41
 FORGET_REDLINE = 0.02         # docs/50 §5.2
+# lm-eval 0.4.13 的 winogrande 是"续写型"任务(doc_to_target 返回续写文本,
+# doc_to_choice 返回整句),mc_eval 的 2 选 1 gold 下标解析拿不到标签 → 三个
+# 模型恒 0%,不参与均值(Δ 不受影响,因三者同为 0)。修复待办:gold 从
+# doc["answer"] (1/2) 取,或改用该任务的 generate 口径。
+EXCLUDE = {"winogrande"}
 
 RE_NLL = re.compile(r"held-out NLL\s+(-?\d+(?:\.\d+)?)")
 RE_TOP5 = re.compile(r"true string among decoded top-5 candidates:\s+([\d.]+)")
-RE_EM = re.compile(r"^argmax_pi\s+([\d.]+)", re.M)
+RE_EM = re.compile(r"^\s*argmax_pi\s+([\d.]+)", re.M)
 RE_SNAP_T10 = re.compile(r"\*\s+T=10.*?bpb\s+([\d.]+)")
 RE_NMI = re.compile(r"NMI\(h-clusters, types\)\s*=\s*([\d.]+)")
 
@@ -74,7 +84,7 @@ def main() -> None:
 
     tasks = list(mc[tags[0]]["results"].keys())
     print("\n## 1. MC 8 项 unit-space 主指标 acc_unit(docs/49)\n")
-    hdr = "| task | n | " + " | ".join(tags) + " | Δedu5b−p2pre | Δcpts7−p2pre | Δedu5b−cpts7 |"
+    hdr = "| task | n | " + " | ".join(tags) + " | d_edu5b-p2pre | d_cpts7-p2pre | d_edu5b-cpts7 |"
     print(hdr)
     print("|---|---|" + "---|" * len(tags) + "---|---|---|")
     deltas_edu, deltas_cpt, deltas_vs_cpt = [], [], []
@@ -88,13 +98,16 @@ def main() -> None:
         d_e = vals.get("edu5b", float("nan")) - vals.get("p2pre", float("nan"))
         d_c = vals.get("cpts7", float("nan")) - vals.get("p2pre", float("nan"))
         d_ec = vals.get("edu5b", float("nan")) - vals.get("cpts7", float("nan"))
-        deltas_edu.append(d_e)
-        deltas_cpt.append(d_c)
-        deltas_vs_cpt.append(d_ec)
-        row += [f"| {d_e*100:+.2f}pp ", f"| {d_c*100:+.2f}pp ", f"| {d_ec*100:+.2f}pp |"]
+        row += [f"| {d_e*100:+.2f}pp ", f"| {d_c*100:+.2f}pp ", f"| {d_ec*100:+.2f}pp "]
+        row.append("| *invalid, excluded* " if t in EXCLUDE else "| ")
+        if t not in EXCLUDE:
+            deltas_edu.append(d_e)
+            deltas_cpt.append(d_c)
+            deltas_vs_cpt.append(d_ec)
         print("".join(row))
 
-    print("\n### 汇总(8 项均值)\n")
+    n_valid = len(deltas_edu)
+    print(f"\n### 汇总(有效 {n_valid} 项均值;{sorted(EXCLUDE)} 因 harness 任务格式不计)\n")
     for key in ["acc_unit", "acc_raw", "acc_char", "acc_unit_pmi"]:
         line = f"- {key}: " + " | ".join(
             f"{tag} {mc[tag]['summary'].get(key, float('nan'))*100:.2f}%" for tag in tags)
