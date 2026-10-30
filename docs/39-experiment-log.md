@@ -205,3 +205,25 @@ p1 同 pkl/表/口径:
 
 **#48 edu5b 5B FineWeb-Edu 单语料续训完成 + 训后评估(2026-10-30;施工=docs/50,完整结果=docs/50 §5.4)**:训练 693756(10-27 07:58 起,wall 前优雅停)→ 自动续投 **708372** → **10-30 15:19 完成 step 70,861**(+25,432 步 = 5.000B units,lr→0,last.pt 落盘);37 次 spike_skip(1.45‰;36×Inf + 1×NaN 单发,无级联),两段 11.12/11.20 s/步;Edu loss 2000 步桶均值 −39.4(46–48k)→ −40.4(50k)→ −41.5(60k)→ −42.6(66–68k)→ 退火段 −43.1 → 末段 −44.4 / 终点 **−46.36**。**评估**(GPU 紧张,拆两个单卡作业:710829 MC / 710830 accept;旧词协议资产 1.27GB+209MB 于 2026-10-30 从本机上传):**MC 7 项有效均值 p2pre 33.20% / cpts7 33.04% / edu5b 33.70%**(winogrande 无效剔除;JSON summary 的 8 项含 0 口径为 29.05/28.91/29.48,勿直接引用);**配对同题逐项(n=20,419):Δ_edu=+0.56pp(95%CI +0.08~+1.04)、Δ_CPT=+0.06pp(−0.42~+0.55)**;内部协议(旧分布,同 p2 验收协议):edu5b **NLL −42.543**(分支 p2pre −38.895 / cpts7 −40.060)、top5 **41.70%**(38.65/38.66)、argmax_pi EM **25.33%**(22.87/22.64)、snap-500k T=10 bpb **2.4792**(2.5866/2.5646;p2 final 2.5390,Δ−0.060)、NMI(h) **0.272**(0.258/0.263);edu 域内 NLL **−45.395**(p2pre −40.526,−4.87);里程碑旧分布 NLL 50k→70k:−41.02→−44.47。**已知问题**:① lm-eval 0.4.13 的 winogrande 是"choice 作 context + 共享续写"格式(gold 下标在 `doc_to_text`=0/1,`doc_to_target` 返回续写文本),`mc_eval._gold_index` 取不到 → 三模型恒 0%;已从均值剔除(Δ 不受影响),修法 = gold 回退 `int(task.doc_to_text(doc))` + 修正 char 归一(代码位置 `scripts/mc_eval.py:_gold_index`);② 集群 conda env 缺 **matplotlib** → `diag_v2_semantic` 在画图处崩(NMI 数值已算出),run_accept 停在 section 3,**section 4 扩展生成未跑(E2 未做)**;③ boolq 三模型均≈多数类基线 62.17%,无判别力(解读中已标注)。产物:`$SCRATCH/mc_eval/mc_eval_{p2pre,cpts7,edu5b}.{json,md}`、`checkpoints/word_{p2pre,cpts7,edu5b}_accept.log`、`scripts/report_edu5b.py`、`slurm/bltz_edu5b_eval{_mc,_accept}.sbatch`;文档:docs/50 §5.4/§8、本条目、AGENTS。**ARC-Easy 31%→27% 口径核对(2026-10-31,用户质疑;job 711594)**:2026-10-27 pilot 的 `acc_unit 31.00%` = **CPT 终端 ckpt(`word_cpt_s_anneal/last.pt`)+ `--limit 300`(前 300 题)**;用当前集群代码复跑同 ckpt/同 limit = **31.00%**(acc_raw 30.67/acc_char 30.33/pmi 26.67,与 pilot 逐位一致);同 ckpt 全量 2376 题 = **26.39%**(raw 26.77/char 27.36/pmi 27.48);前 300 题 vs 全量(全量 JSON 复算):p2pre 35.00%/27.86%、cpts7 30.67%/27.19%、edu5b 31.33%/27.95%,edu5b `--limit 300` 直跑 31.33% 与复算一致;`scripts/mc_eval.py` md5 本机=集群 `dc976a87486fff6cfcb6c77e417289c8`、`scripts/lmeval_bltz.py` `a24e66d01cf632eb2e591b993e0e992a`,且 `git log -- scripts/mc_eval.py` 只有 ea44eb8/8c65b34(2026-10-27),之后无改动。→ 差异来自**评测子集(前300题 vs 全量)与 ckpt 不同**,不是代码/口径变化。产物 `$SCRATCH/mc_eval/arc_verify/mc_eval_{cptlast_300,cptlast_full,edu5b_300}.json`。
 
+### #49 本轮收官归档(2026-10-31;生成机制改造前)
+
+- **生成样例(用户要求,本机完成,未用集群)**:p2 终点 `checkpoints/word_05b_p2_last.pt`
+  (step 50,863)vs edu5b 终点 `checkpoints/word_edu5b_last.pt`(step 70,861;从集群拉取
+  1.9GB)。协议 = `scripts/gen_accept.py`(docs/38 §5),8 prompt × 6 读出 × 48 units,
+  同脚本同种子;读出全为密度泛函(mode / modes-peak T=0.6,1.0 / snap argmax /
+  snap t=0.8,1.0)。prompt 0–3 = 评测序列前 16 units,4–7 = 经典开头句。
+  产物:`checkpoints/word_edu5b_gen_samples.md`(并排全文,549 行,`scripts/gen_compare.py`
+  生成)、原始日志 `checkpoints/gen_edu5b/{p2_last,edu5b}.log`。本机 RTX 4060 单 ckpt
+  约 7 分钟。
+- **用户判断**:2026-10-31 查看样例后判断本轮成果不达预期(原话「看起来是烂完了」),
+  决定**停止 v2 word 臂 0.5B 线**;下一轮计划把**生成机制从 GMM 概率建模改为潜空间扩散**
+  (较大的架构改动,本轮不做设计,待用户主导)。
+- **归档产物**:**`docs/51-work-summary-2026-10-31.md`**(状态/资产清单/评测口径与原始数据/
+  决策史/已关闭方向/未决问题/下一轮接口/恢复指引);同步更新:AGENTS.md 当前状态与
+  本轮收官条目、docs/40 顶部收官注、本条;git 提交见 `git log` 顶部。
+- **状态**:集群无在跑作业;资产原位(ckpts 79.9GB + data 166.5GB + protocol 0.2GB
+  ≈ 247GB/300GB);本地新增 edu5b 终态 ckpt(1.9GB)与生成日志。
+- **工程记录**:① 生成样例这类小任务本机可做(4060,~7min/ckpt),用户 2026-10-31 明确
+  要求「这么点事」不上集群;**② 判 bench 口径差异先核对测量设置(limit/子集/ckpt),
+  再查代码版本(md5/git log),见 #48 补记。**
+
