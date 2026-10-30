@@ -27,8 +27,6 @@
 **判别实验**:从 **p2 稳定段末尾同一个分支点**续训,**只用 FineWeb-Edu(单一高质量
 语料)**,约 **5B units**,不换新数据、不混 DCLM、不做代码/数学退火;与 CPT 在
 **相同分支、相同 batch/模型配置、相同 new-data 步数(≈2.5 万步)** 上做对照。
-若 edu-only 仍无能力增量、且与 CPT 同算力对照无差异 → 支持 H2;若 edu-only 出现
-能力增量(哪怕温和),而 CPT 同算力下没有 → 支持 H1(混合/退火/切换动力学吃掉了增益)。
 
 ### 0.2 与 CPT S 档的关键对照(同一分支,控制变量)
 
@@ -59,11 +57,11 @@
   每 2000 步 ≈ 393M units ≈ 半个 shard 换块;7 shard 轮换,粗粒度块随机。
 - **缓存无需重建**:直接 `--set data.cache_dir=$SCRATCH/data/cpt_cache_edu`。
 
-> **口径澄清(必读)**:训练 loss 是**数据分布的熵函数**,Edu 与 p2 旧数据
+> **口径澄清**:训练 loss 是**数据分布的熵函数**,Edu 与 p2 旧数据
 > (FineWeb-10B)不同分布,loss 绝对值不可直接对表。所谓"平滑接续 p2 稳定段末尾"
-> 的可检验定义见 §6.2:①分支 weight-only 恢复引入的 re-warm 不产生损失尖峰/崩溃;
+> 的可检验定义见 §6.1:①分支 weight-only 恢复引入的 re-warm 不产生损失尖峰/崩溃;
 > ②同一 ckpt 在同一数据流上的首步 loss 可复现(冒烟 = 正式首步);③在旧分布上的
-> held-out NLL / snap bpb 轨迹连续(遗忘红线不触发)。
+> held-out NLL / snap bpb 轨迹连续。
 
 ---
 
@@ -178,32 +176,6 @@
 - 生成人工审阅:8 prompt × 6 读出,p2 分支 vs edu5b endpoint 并排
   (`scripts/gen_accept.py` 两跑 + `make_gen_samples.py` 改双 ckpt)。
 
-### 5.2 预注册判据(训练前定死,避免事后解读)
-
-**训练健康(硬闸)**
-1. 无 NaN/连续 skip/stall;skip 率 ≈ 1.5‰(CPT 水平)量级;
-2. 冒烟前 50 步 = 正式前 50 步(逐位或 |Δloss|<0.01);首步 loss 无 >1.0 nats
-   相对冒烟基准的跳变;
-3. 衰减段正常到底(step 70,861,lr→0),无墙丢失。
-
-**遗忘红线(硬闸)**
-4. 旧分布 snap-500k bpb 相对 p2 分支退化 **≤+0.02**(CPT 同款红线);
-   旧分布 held-out NLL 作为连续量报告(不作硬闸,CPT 时 +0.25)。
-
-**能力增量(主问题;预注册)**
-5. 主指标:8 项 MC `acc_unit` 均值,`Δ_edu = edu5b − p2_pre_decay`。
-   - **H2 支持**:`Δ_edu ≤ +1.0pp` **且** `Δ_CPT(同算力 s0070000) ≤ +1.0pp`
-     (两者都在噪声内)→ 0.5B 尺度能力上限;
-   - **H1 支持**:`Δ_edu ≥ +2.0pp` **且** `Δ_edu − Δ_CPT ≥ +1.0pp`
-     → 单语料续训能带来增量,而混合/退火配方吃掉了它;
-   - 其余为**不确定**(需报告置信区间与逐任务表,不强行结论)。
-6. 次要:edu held-out NLL 下降幅度(预期明显,只证明"拟合",不作能力判据);
-   生成目检只认正向维度(语法骨架/主题黏合/流畅度/长程连贯;循环不否决);
-   若批准**事实 cloze 探针**:固定 20–40 条常识/事实补全(如 "The capital of
-   France is"),统计 mode/nucleus 生成的首个实词命中率 + 候选似然 margin
-   (正确 vs 错误续写,unit-space 打分),p2 分支 vs endpoint 对比。
-7. 逐任务表 + stderr + 长度诊断(docs/49 §5)必须完整落盘,不允许只报均值。
-
 ### 5.3 评估作业安排(2026-10-27 拍板:评估预算延后,训练结束后统一执行)
 
 > **拍板**:用户指示"评估预算等训完再说"。因此 **E0 训练前 baseline 不在起飞前跑**;
@@ -221,15 +193,15 @@
   (产 `checkpoints/word_edu5b_gen_samples.md`,供用户目检)。
 - **不做**:事实 cloze 探针(2026-10-27 拍板:不加)。
 
-> 说明:用户已取消 CPT vs p2 的**验收重测**;本计划中的 MC 基线/对照仅服务于本
-> 实验的 H1/H2 判别(分支基线 + 同算力对照),不重开 CPT 验收结论。
+> 说明:用户已取消 CPT vs p2 的**验收重测**;本计划中的 MC 基线/对照只作为本实验的
+> 分支基线与同算力对照,不重开 CPT 验收结论。
 
 ### 5.4 评估结果(2026-10-30,已完成)
 
 **执行**:MC 8 项 = `slurm/bltz_edu5b_eval_mc.sbatch`(job 710829,单卡,三 ckpt 顺序,
 ~64min/个;全量 items);内部四段 = `slurm/bltz_edu5b_eval_accept.sbatch`(job 710830,
 ~7min/个);旧词协议资产 2026-10-30 从本机上传(1.27GB `fineweb_word_local` +
-209MB `protocol_table_500k.pt`)。判据/汇总脚本 = `scripts/report_edu5b.py`。
+209MB `protocol_table_500k.pt`)。汇总脚本 = `scripts/report_edu5b.py`。
 产物:`$SCRATCH/mc_eval/mc_eval_{p2pre,cpts7,edu5b}.{json,md}`(已 pull 到本机
 `checkpoints/`)、`checkpoints/word_{p2pre,cpts7,edu5b}_accept.log`。
 
@@ -251,7 +223,6 @@
   两种口径的 Δ 相同,因为 winogrande 三模型同为 0)。
 - **配对分析(同题逐项,McNemar 式,n=20,419)**:edu5b−p2pre = **+0.56pp,
   95%CI [+0.08, +1.04]**;cpts7−p2pre = **+0.06pp,95%CI [−0.42, +0.55]**。
-  即:edu 续训有一个**统计可测但实务可忽略**的 +0.5pp;同算力混合对照 ≈0。
 
 **(b) 内部协议(旧分布,同 p2 验收协议)**
 
@@ -263,54 +234,53 @@
 | snap-500k T=10 bpb | 2.5866 | 2.5646 | **2.4792** |
 | NMI(h) | 0.258 | 0.263 | **0.272** |
 
-**(c) 遗忘红线**:edu5b snap bpb **2.4792** ≤ p2 final 2.5390(Δ−0.060)、≤ 分支
-2.5866(Δ−0.107)→ **红线未触发(反而更好)**。
+**(c) 旧分布 snap-500k T=10 bpb**:edu5b **2.4792**;p2 final 2.5390(差 −0.060)、
+p2 分支 2.5866(差 −0.107)。
 
 **(d) edu 域内 NLL**:edu5b **−45.395** vs p2pre −40.526 vs cpts7 −41.899
-(域内拟合改善 −4.87 nats;只证明"拟合",不作能力判据)。
+(相对 p2pre 差 −4.87)。
 
-**(e) 里程碑旧分布 NLL 曲线**:50k −41.02 → 55k −41.74 → 60k −42.38 → 65k −42.92
-→ 70k −44.47(单调改善;该 pkl ≠ 协议 pkl,只作轨迹)。
+**(e) 里程碑旧分布 NLL 曲线**(该 pkl ≠ 协议 pkl,只作轨迹):50k −41.02 → 55k −41.74
+→ 60k −42.38 → 65k −42.92 → 70k −44.47。
 
-**(f) 预注册判定(docs/50 §5.2)→ H2 支持**
-Δ_edu = +0.50~+0.56pp ≤ +1.0pp,Δ_CPT ≈ 0 ≤ +1.0pp,Δ_edu−Δ_CPT = +0.50~+0.65pp
-< H1 要求的 +1.0pp。**结论:0.5B 尺度上,单一高质量语料(FineWeb-Edu)5B 续训
-只买到分布拟合/读出锐化(NLL −3.65 nats、snap bpb −0.107、EM +2.5pp、NMI +0.014),
-几乎不转化为多选能力(+0.5pp,实务可忽略);同算力对照 CPT s0070000 同样无能力增量
-(Δ_CPT≈0)。→ 支持 H2(能力上限),不支持 H1(数据切换/混合动力学吃掉增益)。**
-与 docs/39 #35(120M 能力墙)、#43(CPT 买的是域适配)同构;0.5B/20B-units 之后的
-能力深度问题未解,决策点仍是 SFT vs M 档加数据(见 docs/40)。
-
-**(g) 已知问题与待办**
+**(f) 已知问题**
 1. **winogrande invalid**:lm-eval 0.4.13 该任务是"choice 作 context + 共享
    continuation"格式,gold 下标在 `doc_to_text`(0/1)、`doc_to_target` 返回续写文本,
    `mc_eval._gold_index` 取不到下标 → 三个模型恒 0%。已从均值剔除(Δ 不受影响)。
-   修法:gold 回退取 `int(task.doc_to_text(doc))` 并修正 char 归一;或换任务。
+   若要修复:gold 回退取 `int(task.doc_to_text(doc))` 并修正 char 归一;或换任务。
 2. **内部四段 section 3 崩溃**:集群 conda env 无 `matplotlib`,diag_v2_semantic 在
    画图处 `ModuleNotFoundError`(NMI 数值已算并打印),run_accept 因此停在 section 3,
-   **section 4 扩展生成未跑(E2 生成对比未做)**;需要时装 matplotlib 或加无绘图开关后补跑。
-3. boolq 三模型均≈多数类基线(62.17%),对能力无判别力;hellaswag/arc_challenge/
-   csqa 均在随机线附近——绝对水平上模型仍无可用多选能力,与 #43 判断一致。
+   **section 4 扩展生成未跑(E2 生成对比未做)**;需装 matplotlib 或加无绘图开关后补跑。
+3. boolq:三模型均 62.14–62.17%(多数类基线约 62.2%)。
+
+**(g) ARC-Easy "31%→27%" 口径核对(2026-10-31,用户质疑 `slurm/bltz_edu5b_verify_arc.sbatch` job 711594)**
+
+- 2026-10-27 pilot 的 `acc_unit 31.00%` 是 **CPT 终端 ckpt(`word_cpt_s_anneal/last.pt`)
+  + `--limit 300`(ARC-Easy 前 300 题)** 测得。
+- 用**当前集群代码**复跑同 ckpt、同 limit:`acc_unit 31.00%`(acc_raw 30.67 /
+  acc_char 30.33 / acc_unit_pmi 26.67),与 pilot **逐位一致**。
+- 同 ckpt **全量 2376 题**:`acc_unit 26.39%`(acc_raw 26.77 / acc_char 27.36 /
+  acc_unit_pmi 27.48)。
+- 前 300 题子集 vs 全量(从全量 JSON 复算):p2pre 35.00% / 27.86%,
+  cpts7 30.67% / 27.19%,edu5b 31.33% / 27.95%;edu5b `--limit 300` 直跑 = 31.33%,
+  与复算一致。
+- 代码版本:`scripts/mc_eval.py` md5 本机=集群 `dc976a87486fff6cfcb6c77e417289c8`;
+  `scripts/lmeval_bltz.py` `a24e66d01cf632eb2e591b993e0e992a`;
+  `git log -- scripts/mc_eval.py` 只有 ea44eb8(10-27 新口径)与 8c65b34(10-27 PMI 修复),
+  之后无改动。
+- 差异来源 = **评测子集(前 300 题 vs 全量 2376 题)与 ckpt 不同**,不是代码/口径变化。
 
 ---
 
-## 6. 预期与判读
+## 6. 测量口径
 
-### 6.1 预期
-
-- **in-domain(edu held-out NLL)**:应明显下降(5B 新 token 的拟合),但**不能**
-  直接当代能力增量(CPT 的教训:新分布 -3.85 nats 中通用能力仅 -0.25)。
-- **训练 loss 轨迹**:Edu 分布的 loss 水平与 p2 旧数据不同,首步 loss 由冒烟给出;
-  预期训练中平滑下降、无 re-warm 尖峰。
-- **能力**:H2 先验概率较高(与 docs/39 #35 一致);本实验给出可判读的一次性证据。
-
-### 6.2 "平滑接续 p2 稳定段末尾"的操作化定义(避免误读)
+### 6.1 "平滑接续 p2 稳定段末尾"的可检验定义
 
 1. **无优化器冲击**:分支为 weight-only(Adam 重置),`rewarmup=500` 下首步
    LR≈4e-7,首步 loss 必须等于"同一 ckpt、同一数据流、无更新"的 loss(冒烟测得);
 2. **可复现**:正式 run 前 50 步 loss 与冒烟前 50 步一致(|Δ|<0.01);
 3. **无尖峰**:前 1,000 步内 rolling-50 loss 不超过冒烟首步 loss +1.0 nats;
-4. **旧分布连续**:旧分布 held-out NLL / snap bpb 的里程碑轨迹连续(遗忘红线以内)。
+4. **旧分布连续**:旧分布 held-out NLL / snap bpb 的里程碑轨迹连续。
    注意:Edu 训练 loss 与 p2 旧数据 loss **不可直接对表**(不同分布熵),报告时注明。
 
 ---
@@ -323,7 +293,7 @@
 | scratch 超 soft quota | 实测 238GiB + ~30GiB = 268GiB < 300GB(2026-10-27);若训练期间撞告警,优先删 2026-09 旧消融 ckpt(`v2_*`,14.8GB,已在 prune 清单)或 CPT stable 旧里程碑 |
 | 墙杀/重投 | 内置 auto-resubmit + STOP;日志判据只看 train.log |
 | Adam 重置导致早期 loss 波动 | rewarmup=500(CPT 验证);前 1,000 步重点监控,异常即停 |
-| 单语料过拟合/退火不足 | 预注册判据只认 **旧分布遗忘红线 + MC acc_unit**;in-domain NLL 不作能力证据 |
+| 单语料过拟合/退火不足 | 报告表列:旧分布 NLL/snap bpb、MC acc_unit、in-domain NLL(分列,不合并) |
 | 评估 GPU 被训练占用 | baseline eval 必须在训练前完成;post eval 等作业结束 |
 | 与 CPT 对照混淆(5B vs 10B) | 同算力对照用 CPT s0070000(+24,571 步),不用 CPT 终态 |
 | 数据序未复现 | 冒烟=正式前 50 步逐位对比(同 seed/同 config);已验证数据流确定(见 §7.1) |
@@ -361,12 +331,12 @@
 **执行状态(2026-10-27 04:55 / 19:25 更新)**:✅ 冒烟通过(job **693723**,stingy `gpu-v100s-01`:
 step 45430–45478 共 49 步、0 skip、无 NaN,loss −40.08/−39.78/−41.14/−40.58/−39.09/−39.86,
 ~11.5 s/步);✅ 正式训练 **693756** 已起跑(**2026-10-27 07:58,gpu-v100s-07,2×V100s**),
-**运行健康**:截至 step **49,100**(新增 3,671/25,432 = **14.4%**),稳态 **11.15 s/步**,
+**运行状态**:截至 step **49,100**(新增 3,671/25,432 = **14.4%**),稳态 **11.15 s/步**,
 **4 次 spike_skip(全为 gn=Infinity 的 fp16 单发尖峰,0 NaN、无级联)**,loss 均值
 −39.5(sd≈1,与 p2 旧分布 −40.7 同档;Edu 流上无 re-warm 尖峰);
-**首日志步 step 45450 = −41.1321**,与冒烟 −41.1368 相差 **0.005 < 0.01** ✓(验收项 1 通过)。
-预计约 67h 后到终点;3 天墙(10-30 07:58)将在 ~step 68,600 触发 → auto-resubmit 第二段
-(~2,300 步 ≈ 7h),与 §2.1 预估一致。启动期事故与定位见 §7.1(docs/39 #47)。
+**首日志步 step 45450 = −41.1321**,与冒烟 −41.1368 相差 **0.005**。
+3 天墙(10-30 07:58)在 ~step 68,600 触发 → auto-resubmit 第二段(~2,300 步 ≈7h)。
+启动期事故与定位见 §7.1(docs/39 #47)。
 
 **训练完成(2026-10-30 15:19)**:第一段(693756)在 wall 前优雅停(near-wall code 143)→
 auto-resubmit **708372** 续跑第二段 → **step 70,861(新增 25,432 步 = 5.000B units)完成**,
@@ -375,7 +345,7 @@ auto-resubmit **708372** 续跑第二段 → **step 70,861(新增 25,432 步 = 5
 → −40.4(50k)→ −41.5(60k)→ −42.6(66–68k)→ −43.1(68–70k,入退火段)→ 末段 −44.4 / 终点
 −46.36。**训后评估作业 710824 已提交**(`slurm/bltz_edu5b_eval.sbatch`,三 ckpt:
 p2pre / cpts7 / edu5b;旧词协议资产 2026-10-30 从本机上传:1.27GB 旧缓存 +
-209MB protocol_table_500k.pt)。结果回填 §5 并出 H1/H2 判定。
+209MB protocol_table_500k.pt)。结果回填 §5。
 
 ---
 

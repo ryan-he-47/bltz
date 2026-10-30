@@ -28,7 +28,6 @@ except Exception:
 
 TAGS = ["p2pre", "cpts7", "edu5b"]
 P2_SNAP_BPB = 2.5390          # p2 acceptance log, protocol T=10, docs/39 #41
-FORGET_REDLINE = 0.02         # docs/50 §5.2
 # lm-eval 0.4.13 的 winogrande 是"续写型"任务(doc_to_target 返回续写文本,
 # doc_to_choice 返回整句),mc_eval 的 2 选 1 gold 下标解析拿不到标签 → 三个
 # 模型恒 0%,不参与均值(Δ 不受影响,因三者同为 0)。修复待办:gold 从
@@ -122,17 +121,6 @@ def main() -> None:
     print(f"\n**Δacc_unit 均值**: edu5b−p2pre = **{d_edu:+.2f}pp**; "
           f"cpts7−p2pre = {d_cpt:+.2f}pp; edu5b−cpts7 = {d_ec:+.2f}pp")
 
-    print("\n### 预注册判据(docs/50 §5.2)\n")
-    h2 = d_edu <= 1.0 and d_cpt <= 1.0
-    h1 = d_edu >= 2.0 and (d_edu - d_cpt) >= 1.0
-    if h2:
-        print("- **H2 支持**(0.5B 尺度能力上限):Δ_edu ≤ +1.0pp 且 Δ_CPT ≤ +1.0pp")
-    elif h1:
-        print("- **H1 支持**(数据切换/混合动力学吃掉增益):Δ_edu ≥ +2.0pp 且 Δ_edu−Δ_CPT ≥ +1.0pp")
-    else:
-        print("- **不确定**:未触发两条预注册分支,报告逐任务表与置信区间,不下强结论")
-    print(f"  (Δ_edu={d_edu:+.2f}pp, Δ_CPT={d_cpt:+.2f}pp, Δ_edu−Δ_CPT={d_edu-d_cpt:+.2f}pp)")
-
     if args.accept:
         print("\n## 2. 内部协议(docs/38 四段;run_accept)\n")
         print("| 指标 | " + " | ".join(TAGS) + " |")
@@ -154,10 +142,8 @@ def main() -> None:
             print("".join(row) + "|")
         bpb = acc.get("edu5b", {}).get("snap_bpb_t10")
         if bpb is not None:
-            dd = bpb - P2_SNAP_BPB
-            flag = "OK(红线内)" if dd <= FORGET_REDLINE else "**RED LINE BREACH**"
-            print(f"\n- 遗忘红线: snap-500k T=10 bpb = **{bpb:.4f}** vs p2 {P2_SNAP_BPB:.4f} "
-                  f"(Δ={dd:+.4f} ≤ +{FORGET_REDLINE}) → {flag}")
+            print(f"\n- snap-500k T=10 bpb: edu5b **{bpb:.4f}** vs p2 {P2_SNAP_BPB:.4f} "
+                  f"(Δ={bpb - P2_SNAP_BPB:+.4f})")
 
     if args.diag:
         print("\n## 3. held-out NLL(edu 分布 / 旧分布)\n")
