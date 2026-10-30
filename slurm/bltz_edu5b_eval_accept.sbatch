@@ -3,13 +3,14 @@
 # 与 slurm/bltz_edu5b_eval_mc.sbatch 配对;MC 主指标那份先跑,本份抢第二张空闲卡。
 # 需要旧词协议资产(2026-10-30 从本机上传):
 #   $SCRATCH/data/fineweb_word_local/ + $SCRATCH/protocol/protocol_table_500k.pt
+# 集群策略:1 GPU 最多 8 CPU(10 会被 sbatch 拒),故 cpus-per-task=8。
 #   sbatch slurm/bltz_edu5b_eval_accept.sbatch
 #SBATCH --job-name=bltz_e5_acc
 #SBATCH --partition=gpu_v100s
 #SBATCH --exclude=gpu-v100s-06
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=10
-#SBATCH --mem=40G
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
 #SBATCH --time=0-08:00:00
 #SBATCH --output=/gpfs1/home/yihe47/bltz/logs/edu5b_eval_accept_%j.out
 
