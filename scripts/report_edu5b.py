@@ -107,12 +107,15 @@ def main() -> None:
         print("".join(row))
 
     n_valid = len(deltas_edu)
+    import statistics
     print(f"\n### 汇总(有效 {n_valid} 项均值;{sorted(EXCLUDE)} 因 harness 任务格式不计)\n")
     for key in ["acc_unit", "acc_raw", "acc_char", "acc_unit_pmi"]:
-        line = f"- {key}: " + " | ".join(
-            f"{tag} {mc[tag]['summary'].get(key, float('nan'))*100:.2f}%" for tag in tags)
-        print(line)
-    import statistics
+        parts = []
+        for tag in tags:
+            vals = [mc[tag]["results"][t]["metrics"][key] for t in tasks if t not in EXCLUDE]
+            parts.append(f"{tag} {statistics.mean(vals)*100:.2f}%" if vals else f"{tag} n/a")
+        print(f"- {key}: " + " | ".join(parts))
+    print("  (JSON `summary` 字段是 8 项含 winogrande 恒 0 的原始记录,勿直接引用;Δ 不受影响)")
     d_edu = statistics.mean(deltas_edu) * 100
     d_cpt = statistics.mean(deltas_cpt) * 100
     d_ec = statistics.mean(deltas_vs_cpt) * 100
